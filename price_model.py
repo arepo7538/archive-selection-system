@@ -229,12 +229,34 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
         recent_30d = kw_df[kw_df["sold_date"] >= kw_df["sold_date"].max() - pd.Timedelta(days=30)]
         avg_30d = recent_30d["sold_price"].mean()
 
-        # 用最优模型预测最新一条的特征
-        latest_features = kw_df[FEATURE_COLS].iloc[-1:].values
-        if HAS_XGB:
-            predicted_price = float(xgb.predict(latest_features)[0])
-        else:
-            predicted_price = float(lr.predict(latest_features)[0])
+        # --- 按 item_type 分别预测 ---
+        best_model = xgb if HAS_XGB else lr
+        latest_row = kw_df[FEATURE_COLS].iloc[-1:].copy()
+        type_col_idx = FEATURE_COLS.index("item_type_code")
+
+        type_predictions = {}
+        for itype, icode in ITEM_TYPE_MAP.items():
+            type_count = (kw_df["item_type"] == itype).sum()
+            if type_count == 0:
+                continue
+            row = latest_row.copy()
+            row.iloc[0, type_col_idx] = icode
+            pred = float(best_model.predict(row.values)[0])
+            type_median = kw_df.loc[kw_df["item_type"] == itype, "sold_price"].median()
+            type_predictions[itype] = {
+                "predicted": pred,
+                "median": type_median,
+                "count": type_count,
+                "min": float(kw_df.loc[kw_df["item_type"] == itype, "sold_price"].min()),
+                "max": float(kw_df.loc[kw_df["item_type"] == itype, "sold_price"].max()),
+            }
+
+        # 整体预测价 = 按各 type 数量加权平均
+        total_count = sum(v["count"] for v in type_predictions.values())
+        predicted_price = sum(
+            v["predicted"] * v["count"] / total_count
+            for v in type_predictions.values()
+        )
 
         # 趋势：对比预测价 vs 30天均价
         pct_change = (predicted_price - avg_30d) / avg_30d * 100
@@ -249,6 +271,7 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
         result["predicted_price"] = predicted_price
         result["trend"] = trend
         result["pct_change"] = pct_change
+        result["type_predictions"] = type_predictions
         result["dates"] = kw_df["sold_date"].values
         result["actuals"] = kw_df["sold_price"].values
 

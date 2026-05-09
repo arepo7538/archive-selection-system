@@ -693,10 +693,54 @@ elif page == "Price Prediction":
     <table class="dash-table">
       <thead><tr>
         <th>Item</th><th>Records</th>
-        <th>Predicted</th><th>30-Day Avg</th>
+        <th>Predicted (Wtd Avg)</th><th>30-Day Avg</th>
         <th>Trend</th><th>Change</th><th>Test MAE</th><th>CV MAE</th>
       </tr></thead>
       <tbody>{summary_rows}</tbody>
+    </table>
+    </div>
+    <div style="font-size:0.72rem; color:#9ca3af; margin-top:4px;">
+      * Predicted price is a weighted average across item types (jacket, pants, tee, etc.) within each keyword.
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Item Type 明细表 ──────────────────────────────────────────
+    st.markdown('<div class="section-title">Predicted Price by Item Type</div>', unsafe_allow_html=True)
+
+    type_rows = ""
+    TYPE_ORDER = ["jacket", "pants", "hoodie", "shirt", "tee", "shoes", "other"]
+    TYPE_COLORS_MAP = {
+        "jacket": "#dc2626", "pants": "#059669", "hoodie": "#7c3aed",
+        "tee": "#2563eb", "shirt": "#d97706", "shoes": "#ec4899", "other": "#9ca3af",
+    }
+
+    for r in pred_results:
+        tp = r.get("type_predictions", {})
+        sorted_types = [t for t in TYPE_ORDER if t in tp]
+        first = True
+        for itype in sorted_types:
+            info = tp[itype]
+            kw_cell = f'<td class="name" rowspan="{len(sorted_types)}">{r["keyword"]}</td>' if first else ""
+            color = TYPE_COLORS_MAP.get(itype, "#6b7280")
+            type_rows += f"""
+            <tr>
+              {kw_cell}
+              <td><span style="color:{color}; font-weight:600;">&#9679;</span> {itype.capitalize()}</td>
+              <td>{info['count']}</td>
+              <td style="font-weight:600">${info['predicted']:.0f}</td>
+              <td>${info['median']:.0f}</td>
+              <td>${info['min']:.0f} – ${info['max']:.0f}</td>
+            </tr>"""
+            first = False
+
+    st.markdown(f"""
+    <div style="overflow-x:auto; border:1px solid #e5e7eb; border-radius:8px;">
+    <table class="dash-table">
+      <thead><tr>
+        <th>Keyword</th><th>Type</th><th>Records</th>
+        <th>Predicted</th><th>Median</th><th>Price Range</th>
+      </tr></thead>
+      <tbody>{type_rows}</tbody>
     </table>
     </div>
     """, unsafe_allow_html=True)
