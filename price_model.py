@@ -7,10 +7,12 @@ Price Prediction Model
 """
 
 import os
+import re
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from typing import Optional
 
 try:
@@ -37,6 +39,30 @@ CONDITION_MAP = {
     "is_used": 2,
     "is_worn": 1,
 }
+
+# ── Item Type 分类（按 title 关键词匹配）──────────────────────────
+ITEM_TYPE_PATTERNS = [
+    ("jacket",  r"jacket|bomber|varsity|blazer|ma-1|flight|coat"),
+    ("pants",   r"pants|jeans|denim(?!.*jacket)|trouser|bondage.*jean"),
+    ("hoodie",  r"hoodie|hoody|sweatshirt"),
+    ("tee",     r"t-?shirt|tee\b|tshirt"),
+    ("shirt",   r"shirt(?!.*t-shirt)"),
+    ("shoes",   r"shoe|sneaker|converse|boot"),
+]
+
+ITEM_TYPE_MAP = {
+    "jacket": 6, "pants": 5, "hoodie": 4,
+    "shirt": 3, "tee": 2, "shoes": 1, "other": 0,
+}
+
+
+def classify_item_type(title: str) -> str:
+    """根据 title 关键词分类单品类型"""
+    t = str(title).lower()
+    for item_type, pattern in ITEM_TYPE_PATTERNS:
+        if re.search(pattern, t):
+            return item_type
+    return "other"
 
 
 def load_data() -> pd.DataFrame:
@@ -83,6 +109,10 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # Followers
     df["followers"] = df["followers"].fillna(0).astype(int)
 
+    # Item Type（基于 title 分类）
+    df["item_type"] = df["title"].apply(classify_item_type)
+    df["item_type_code"] = df["item_type"].map(ITEM_TYPE_MAP).fillna(0).astype(int)
+
     # 滚动均价（按单品分组，按时间排序后计算）
     for window in [7, 14, 30]:
         col_name = f"rolling_avg_{window}d"
@@ -110,7 +140,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 FEATURE_COLS = [
     "week_of_year", "month", "day_of_week", "days_since_start",
-    "condition_code", "followers",
+    "condition_code", "followers", "item_type_code",
     "rolling_avg_7d", "rolling_avg_14d", "rolling_avg_30d",
 ]
 
@@ -157,12 +187,21 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
             "lr_pred_all": lr_pred_all,
         }
 
-        # --- XGBoost ---
+        # --- Cross-Validation (3-fold time-series) ---
+        tscv = TimeSeriesSplit(n_splits=3)
+        lr_cv_scores = cross_val_score(
+            LinearRegression(), X_train, y_train,
+            cv=tscv, scoring="neg_mean_absolute_error",
+        )
+        result["lr_cv_mae"] = -lr_cv_scores.mean()
+
+        # --- XGBoost (conservative params to reduce overfitting) ---
         if HAS_XGB:
             xgb = XGBRegressor(
-                n_estimators=100,
-                max_depth=4,
+                n_estimators=50,
+                max_depth=3,
                 learning_rate=0.1,
+                min_child_weight=5,
                 random_state=42,
             )
             xgb.fit(X_train, y_train)
@@ -170,10 +209,21 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
             xgb_pred_all = xgb.predict(kw_df[FEATURE_COLS].values)
             xgb_mae = mean_absolute_error(y_test, xgb_pred_test)
             xgb_rmse = np.sqrt(mean_squared_error(y_test, xgb_pred_test))
+
+            xgb_cv_scores = cross_val_score(
+                XGBRegressor(
+                    n_estimators=50, max_depth=3,
+                    learning_rate=0.1, min_child_weight=5, random_state=42,
+                ),
+                X_train, y_train,
+                cv=tscv, scoring="neg_mean_absolute_error",
+            )
+
             result["xgb_mae"] = xgb_mae
             result["xgb_rmse"] = xgb_rmse
             result["xgb_model"] = xgb
             result["xgb_pred_all"] = xgb_pred_all
+            result["xgb_cv_mae"] = -xgb_cv_scores.mean()
 
         # --- 价格趋势判断 ---
         recent_30d = kw_df[kw_df["sold_date"] >= kw_df["sold_date"].max() - pd.Timedelta(days=30)]
@@ -203,8 +253,12 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
         result["actuals"] = kw_df["sold_price"].values
 
         results.append(result)
+        cv_info = f", LR CV=${result['lr_cv_mae']:.0f}"
+        if HAS_XGB:
+            cv_info += f", XGB CV=${result['xgb_cv_mae']:.0f}"
         print(f"  {kw}: LR MAE=${lr_mae:.0f}" +
               (f", XGB MAE=${xgb_mae:.0f}" if HAS_XGB else "") +
+              cv_info +
               f" | Predicted=${predicted_price:.0f}, 30d Avg=${avg_30d:.0f}, Trend={trend}")
 
     return results
@@ -224,14 +278,16 @@ def build_summary_table(results: list) -> pd.DataFrame:
             "Trend": r["trend"],
             "Change (%)": round(r["pct_change"], 1),
         }
+        row["LR CV MAE ($)"] = round(r.get("lr_cv_mae", r["lr_mae"]), 1)
         if "xgb_mae" in r:
             row["XGB MAE ($)"] = round(r["xgb_mae"], 1)
             row["XGB RMSE ($)"] = round(r["xgb_rmse"], 1)
+            row["XGB CV MAE ($)"] = round(r.get("xgb_cv_mae", r["xgb_mae"]), 1)
         rows.append(row)
 
-    cols = ["Item", "Records", "LR MAE ($)", "LR RMSE ($)"]
+    cols = ["Item", "Records", "LR MAE ($)", "LR RMSE ($)", "LR CV MAE ($)"]
     if "xgb_mae" in results[0]:
-        cols += ["XGB MAE ($)", "XGB RMSE ($)"]
+        cols += ["XGB MAE ($)", "XGB RMSE ($)", "XGB CV MAE ($)"]
     cols += ["Predicted Price ($)", "30-Day Avg ($)", "Trend", "Change (%)"]
 
     return pd.DataFrame(rows)[cols]

@@ -673,6 +673,9 @@ elif page == "Price Prediction":
         change_val = srow["Change (%)"]
         change_color = "#dc2626" if change_val < -5 else "#059669" if change_val > 5 else "#6b7280"
 
+        test_mae = srow.get('XGB MAE ($)', srow['LR MAE ($)'])
+        cv_mae = srow.get('XGB CV MAE ($)', srow.get('LR CV MAE ($)', test_mae))
+
         summary_rows += f"""
         <tr>
           <td class="name">{srow['Item']}</td>
@@ -681,7 +684,8 @@ elif page == "Price Prediction":
           <td>${srow['30-Day Avg ($)']:.0f}</td>
           <td style="color:{trend_color}; font-weight:600">{icon} {trend}</td>
           <td style="color:{change_color}; font-weight:600">{change_val:+.1f}%</td>
-          <td>${srow.get('XGB MAE ($)', srow['LR MAE ($)']):.0f}</td>
+          <td>${test_mae:.0f}</td>
+          <td>${cv_mae:.0f}</td>
         </tr>"""
 
     st.markdown(f"""
@@ -690,7 +694,7 @@ elif page == "Price Prediction":
       <thead><tr>
         <th>Item</th><th>Records</th>
         <th>Predicted</th><th>30-Day Avg</th>
-        <th>Trend</th><th>Change</th><th>MAE</th>
+        <th>Trend</th><th>Change</th><th>Test MAE</th><th>CV MAE</th>
       </tr></thead>
       <tbody>{summary_rows}</tbody>
     </table>
