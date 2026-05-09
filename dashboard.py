@@ -193,10 +193,10 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
 }
 .footer-box h4 {
     color: #6b7280;
-    font-size: 0.75rem;
+    font-size: 0.9rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    margin: 0 0 8px 0;
+    margin: 0 0 10px 0;
 }
 .footer-grid {
     display: grid;
@@ -204,20 +204,20 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
     gap: 12px;
 }
 .footer-item .fi-title {
-    font-size: 0.76rem;
+    font-size: 0.88rem;
     font-weight: 600;
     color: #374151;
-    margin-bottom: 2px;
+    margin-bottom: 3px;
 }
 .footer-item .fi-weight {
-    font-size: 0.67rem;
+    font-size: 0.78rem;
     color: #2563eb;
-    margin-bottom: 2px;
+    margin-bottom: 3px;
 }
 .footer-item .fi-desc {
-    font-size: 0.68rem;
-    color: #9ca3af;
-    line-height: 1.4;
+    font-size: 0.8rem;
+    color: #6b7280;
+    line-height: 1.5;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -239,15 +239,15 @@ def load_data() -> pd.DataFrame:
 try:
     df = load_data()
 except FileNotFoundError:
-    st.error("找不到 scorecard.csv 或 sample_data.csv，请先运行 python run_weekly.py 生成数据。")
+    st.error("Cannot find scorecard.csv or sample_data.csv. Please run `python run_weekly.py` first.")
     st.stop()
 
 # ── 侧边栏 ────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 筛选")
+    st.markdown("### Filters")
     brands = sorted(df["brand"].unique().tolist())
     selected_brands = st.multiselect(
-        "品牌",
+        "Brand",
         options=brands,
         default=brands,
     )
@@ -259,7 +259,7 @@ with st.sidebar:
     score_min_val = float(score_valid.min()) if len(score_valid) > 0 else 0.0
     score_max_val = float(score_valid.max()) if len(score_valid) > 0 else 10.0
     score_range = st.slider(
-        "综合得分区间",
+        "Score Range",
         min_value=0.0,
         max_value=10.0,
         value=(score_min_val, score_max_val),
@@ -268,14 +268,14 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("**评分权重**")
+    st.markdown("**Scoring Weights**")
     st.markdown("""
-| 维度 | 权重 |
+| Metric | Weight |
 |------|------|
-| 供需比 | 35% |
-| 流通速度 | 30% |
-| 收藏热度 | 25% |
-| 价格动量 | 10% |
+| Supply/Demand | 35% |
+| Velocity | 30% |
+| Hype | 25% |
+| Momentum | 10% |
 """)
 
 # ── 筛选 ──────────────────────────────────────────────────────────
@@ -287,7 +287,7 @@ filtered = filtered[
 filtered = filtered.sort_values("total_score", ascending=False).reset_index(drop=True)
 
 if filtered.empty:
-    st.warning("没有符合条件的数据，请在左侧调整筛选条件。")
+    st.warning("No data matches current filters. Please adjust in the sidebar.")
     st.stop()
 
 top1     = filtered.iloc[0]
