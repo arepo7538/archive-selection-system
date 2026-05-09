@@ -250,6 +250,9 @@ def load_prediction_data():
         df_feat = price_model.build_features(df_clean)
         results = price_model.train_and_evaluate(df_feat)
         summary = price_model.build_summary_table(results)
+        for r in results:
+            r.pop("lr_model", None)
+            r.pop("xgb_model", None)
         return results, summary, df_feat
     except Exception:
         return None, None, None
@@ -606,16 +609,6 @@ if page == "Selection Dashboard":
 # ══════════════════════════════════════════════════════════════════
 elif page == "Price Prediction":
 
-    # ── 页头 ──────────────────────────────────────────────────────
-    st.markdown("""
-    <div class="dash-header">
-      <div class="dash-title">Price Prediction</div>
-      <div class="dash-meta">
-        Linear Regression + XGBoost &nbsp;|&nbsp; 180-day historical data
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
     # 加载预测数据
     with st.spinner("Running price prediction models..."):
         pred_results, pred_summary, pred_df = load_prediction_data()
@@ -627,284 +620,200 @@ elif page == "Price Prediction":
         )
         st.stop()
 
-    # ── 概览卡片 ──────────────────────────────────────────────────
-    n_items = len(pred_results)
-    n_declining = sum(1 for r in pred_results if r["trend"] == "Declining")
-    n_stable = sum(1 for r in pred_results if r["trend"] == "Stable")
-    n_rising = sum(1 for r in pred_results if r["trend"] == "Rising")
-    avg_mae = np.mean([r.get("xgb_mae", r["lr_mae"]) for r in pred_results])
-
-    st.markdown(f"""
-    <div class="overview-grid">
-      <div class="ov-card">
-        <div class="ov-label">Items Tracked</div>
-        <div class="ov-num">{n_items}</div>
-        <div class="ov-detail">with 30+ transactions</div>
-      </div>
-      <div class="ov-card">
-        <div class="ov-label">Avg Model MAE</div>
-        <div class="ov-num gold">${avg_mae:.0f}</div>
-        <div class="ov-detail">XGBoost best model</div>
-      </div>
-      <div class="ov-card">
-        <div class="ov-label">Declining</div>
-        <div class="ov-num rose">{n_declining}</div>
-        <div class="ov-detail">{n_stable} stable, {n_rising} rising</div>
-      </div>
-      <div class="ov-card">
-        <div class="ov-label">Total Records</div>
-        <div class="ov-num green">{sum(r['n_records'] for r in pred_results)}</div>
-        <div class="ov-detail">historical transactions</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Summary 表格 ──────────────────────────────────────────────
-    st.markdown('<div class="section-title">Prediction Summary</div>', unsafe_allow_html=True)
-
     TREND_COLORS = {"Declining": "#dc2626", "Stable": "#059669", "Rising": "#2563eb"}
-
-    summary_rows = ""
-    for _, srow in pred_summary.iterrows():
-        trend = srow["Trend"]
-        trend_color = TREND_COLORS.get(trend, "#6b7280")
-        trend_icon = {"Rising": "&#9650;", "Declining": "&#9660;", "Stable": "&#8594;"}
-        icon = trend_icon.get(trend, "")
-        change_val = srow["Change (%)"]
-        change_color = "#dc2626" if change_val < -5 else "#059669" if change_val > 5 else "#6b7280"
-
-        test_mae = srow.get('XGB MAE ($)', srow['LR MAE ($)'])
-        cv_mae = srow.get('XGB CV MAE ($)', srow.get('LR CV MAE ($)', test_mae))
-
-        summary_rows += f"""
-        <tr>
-          <td class="name">{srow['Item']}</td>
-          <td>{srow['Records']}</td>
-          <td style="font-weight:600">${srow['Predicted Price ($)']:.0f}</td>
-          <td>${srow['30-Day Avg ($)']:.0f}</td>
-          <td style="color:{trend_color}; font-weight:600">{icon} {trend}</td>
-          <td style="color:{change_color}; font-weight:600">{change_val:+.1f}%</td>
-          <td>${test_mae:.0f}</td>
-          <td>${cv_mae:.0f}</td>
-        </tr>"""
-
-    st.markdown(f"""
-    <div style="overflow-x:auto; border:1px solid #e5e7eb; border-radius:8px;">
-    <table class="dash-table">
-      <thead><tr>
-        <th>Item</th><th>Records</th>
-        <th>Predicted (Wtd Avg)</th><th>30-Day Avg</th>
-        <th>Trend</th><th>Change</th><th>Test MAE</th><th>CV MAE</th>
-      </tr></thead>
-      <tbody>{summary_rows}</tbody>
-    </table>
-    </div>
-    <div style="font-size:0.72rem; color:#9ca3af; margin-top:4px;">
-      * Predicted price is a weighted average across item types (jacket, pants, tee, etc.) within each keyword.
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Item Type 明细表 ──────────────────────────────────────────
-    st.markdown('<div class="section-title">Predicted Price by Item Type</div>', unsafe_allow_html=True)
-
-    type_rows = ""
-    TYPE_ORDER = ["jacket", "pants", "hoodie", "shirt", "tee", "shoes", "other"]
-    TYPE_COLORS_MAP = {
+    ITEM_TYPE_COLORS = {
         "jacket": "#dc2626", "pants": "#059669", "hoodie": "#7c3aed",
         "tee": "#2563eb", "shirt": "#d97706", "shoes": "#ec4899", "other": "#9ca3af",
     }
+    TYPE_ORDER = ["jacket", "pants", "hoodie", "shirt", "tee", "shoes", "other"]
 
-    for r in pred_results:
-        tp = r.get("type_predictions", {})
-        sorted_types = [t for t in TYPE_ORDER if t in tp]
-        first = True
-        for itype in sorted_types:
-            info = tp[itype]
-            kw_cell = f'<td class="name" rowspan="{len(sorted_types)}">{r["keyword"]}</td>' if first else ""
-            color = TYPE_COLORS_MAP.get(itype, "#6b7280")
-            type_rows += f"""
-            <tr>
-              {kw_cell}
-              <td><span style="color:{color}; font-weight:600;">&#9679;</span> {itype.capitalize()}</td>
-              <td>{info['count']}</td>
-              <td style="font-weight:600">${info['predicted']:.0f}</td>
-              <td>${info['median']:.0f}</td>
-              <td>${info['min']:.0f} – ${info['max']:.0f}</td>
-            </tr>"""
-            first = False
+    # ── 侧边栏：单品选择器 ────────────────────────────────────────
+    with st.sidebar:
+        st.markdown("### Select Item")
+        item_options = [r["keyword"] for r in pred_results]
+        selected_kw = st.selectbox(
+            "Item",
+            options=item_options,
+            label_visibility="collapsed",
+        )
 
+    # 当前选中的结果
+    r = next(r for r in pred_results if r["keyword"] == selected_kw)
+    trend = r["trend"]
+    trend_color = TREND_COLORS.get(trend, "#6b7280")
+    trend_icon = {"Rising": "&#9650;", "Declining": "&#9660;", "Stable": "&#8594;"}[trend]
+    test_mae = r.get("xgb_mae", r["lr_mae"])
+    cv_mae = r.get("xgb_cv_mae", r.get("lr_cv_mae", test_mae))
+    pct = r["pct_change"]
+    change_color = "#dc2626" if pct < -5 else "#059669" if pct > 5 else "#6b7280"
+
+    # ── 页头 ──────────────────────────────────────────────────────
     st.markdown(f"""
-    <div style="overflow-x:auto; border:1px solid #e5e7eb; border-radius:8px;">
-    <table class="dash-table">
-      <thead><tr>
-        <th>Keyword</th><th>Type</th><th>Records</th>
-        <th>Predicted</th><th>Median</th><th>Price Range</th>
-      </tr></thead>
-      <tbody>{type_rows}</tbody>
-    </table>
+    <div class="dash-header">
+      <div class="dash-title">{selected_kw}</div>
+      <div class="dash-meta">
+        {r['n_records']} records &nbsp;|&nbsp; 180-day history
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Item Type 颜色映射 ──────────────────────────────────────────
-    ITEM_TYPE_COLORS = {
-        "jacket": "#dc2626",   # red
-        "pants":  "#059669",   # green
-        "hoodie": "#7c3aed",   # purple
-        "tee":    "#2563eb",   # blue
-        "shirt":  "#d97706",   # amber
-        "shoes":  "#ec4899",   # pink
-        "other":  "#9ca3af",   # gray
-    }
+    # ── 概览卡片 ──────────────────────────────────────────────────
+    st.markdown(f"""
+    <div class="overview-grid">
+      <div class="ov-card">
+        <div class="ov-label">Predicted (Wtd Avg)</div>
+        <div class="ov-num">${r['predicted_price']:.0f}</div>
+        <div class="ov-detail">across all item types</div>
+      </div>
+      <div class="ov-card">
+        <div class="ov-label">30-Day Avg</div>
+        <div class="ov-num gold">${r['avg_30d']:.0f}</div>
+        <div class="ov-detail">recent market price</div>
+      </div>
+      <div class="ov-card">
+        <div class="ov-label">Trend</div>
+        <div class="ov-num" style="color:{trend_color}">{trend_icon} {trend}</div>
+        <div class="ov-detail" style="color:{change_color}">{pct:+.1f}%</div>
+      </div>
+      <div class="ov-card">
+        <div class="ov-label">Model Error</div>
+        <div class="ov-num rose">${test_mae:.0f}</div>
+        <div class="ov-detail">Test MAE (CV: ${cv_mae:.0f})</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # ── 每个单品的价格走势图（按 item_type 着色）─────────────────
-    st.markdown('<div class="section-title">Price Trends — Actual vs Predicted</div>', unsafe_allow_html=True)
+    # ── Item Type 预测对比柱状图 + 明细表 ─────────────────────────
+    tp = r.get("type_predictions", {})
+    active_types = [t for t in TYPE_ORDER if t in tp]
 
-    for r in pred_results:
-        kw = r["keyword"]
-        kw_data = pred_df[pred_df["keyword"] == kw].copy()
-        dates = pd.to_datetime(r["dates"])
-        lr_pred = r["lr_pred_all"]
-        split_idx = r["train_size"]
-        split_date = dates[split_idx]
-        trend = r["trend"]
+    if active_types:
+        col_bar, col_table = st.columns([1, 1], gap="medium")
 
-        fig = go.Figure()
+        with col_bar:
+            st.markdown('<div class="section-title">Predicted Price by Type</div>', unsafe_allow_html=True)
+            type_labels = [t.capitalize() for t in active_types]
+            type_preds = [tp[t]["predicted"] for t in active_types]
+            type_colors = [ITEM_TYPE_COLORS.get(t, "#9ca3af") for t in active_types]
 
-        # Actual prices — one trace per item_type for colored legend
-        for itype in sorted(kw_data["item_type"].unique()):
-            mask = kw_data["item_type"] == itype
-            sub = kw_data[mask]
-            color = ITEM_TYPE_COLORS.get(itype, "#9ca3af")
-            fig.add_trace(go.Scatter(
-                x=sub["sold_date"], y=sub["sold_price"], mode="markers",
-                name=itype.capitalize(),
-                marker=dict(color=color, size=8, opacity=0.8,
-                            line=dict(width=0.5, color="white")),
-                legendgroup="types",
+            fig_tp = go.Figure(go.Bar(
+                x=type_preds,
+                y=type_labels,
+                orientation="h",
+                text=[f"${v:.0f}" for v in type_preds],
+                textposition="outside",
+                textfont=dict(color="#374151", size=11),
+                marker=dict(color=type_colors),
             ))
+            fig_tp.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#6b7280", size=11),
+                yaxis=dict(
+                    categoryorder="array", categoryarray=list(reversed(type_labels)),
+                    tickfont=dict(color="#374151", size=11),
+                    gridcolor="rgba(0,0,0,0)",
+                ),
+                xaxis=dict(
+                    title="Predicted Price ($)",
+                    gridcolor="#f3f4f6", tickfont=dict(color="#9ca3af"),
+                    range=[0, max(type_preds) * 1.25] if type_preds else [0, 100],
+                ),
+                margin=dict(l=0, r=40, t=10, b=10),
+                height=max(200, len(active_types) * 50 + 60),
+            )
+            st.plotly_chart(fig_tp, use_container_width=True)
 
-        # LR baseline (gray dashed)
+        with col_table:
+            st.markdown('<div class="section-title">Item Type Detail</div>', unsafe_allow_html=True)
+            type_rows = ""
+            for itype in active_types:
+                info = tp[itype]
+                color = ITEM_TYPE_COLORS.get(itype, "#6b7280")
+                type_rows += f"""
+                <tr>
+                  <td><span style="color:{color}; font-weight:600;">&#9679;</span> {itype.capitalize()}</td>
+                  <td>{info['count']}</td>
+                  <td style="font-weight:600">${info['predicted']:.0f}</td>
+                  <td>${info['median']:.0f}</td>
+                  <td>${info['min']:.0f} – ${info['max']:.0f}</td>
+                </tr>"""
+
+            st.markdown(f"""
+            <div style="border:1px solid #e5e7eb; border-radius:8px;">
+            <table class="dash-table">
+              <thead><tr>
+                <th>Type</th><th>Records</th>
+                <th>Predicted</th><th>Median</th><th>Price Range</th>
+              </tr></thead>
+              <tbody>{type_rows}</tbody>
+            </table>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ── 价格走势散点图（按 item_type 着色）────────────────────────
+    st.markdown('<div class="section-title">Price Trend — Actual vs Predicted</div>', unsafe_allow_html=True)
+
+    kw_data = pred_df[pred_df["keyword"] == selected_kw].copy()
+    dates = pd.to_datetime(r["dates"])
+    lr_pred = r["lr_pred_all"]
+    split_idx = r["train_size"]
+    split_date = dates[split_idx]
+
+    fig = go.Figure()
+
+    for itype in sorted(kw_data["item_type"].unique()):
+        sub = kw_data[kw_data["item_type"] == itype]
+        color = ITEM_TYPE_COLORS.get(itype, "#9ca3af")
         fig.add_trace(go.Scatter(
-            x=dates, y=lr_pred, mode="lines",
-            name=f"Linear Regression (MAE=${r['lr_mae']:.0f})",
-            line=dict(color="#9ca3af", width=2, dash="dash"),
+            x=sub["sold_date"], y=sub["sold_price"], mode="markers",
+            name=itype.capitalize(),
+            marker=dict(color=color, size=8, opacity=0.8,
+                        line=dict(width=0.5, color="white")),
+            legendgroup="types",
+        ))
+
+    fig.add_trace(go.Scatter(
+        x=dates, y=lr_pred, mode="lines",
+        name=f"Linear Regression (MAE=${r['lr_mae']:.0f})",
+        line=dict(color="#9ca3af", width=2, dash="dash"),
+        legendgroup="models",
+    ))
+
+    if "xgb_pred_all" in r:
+        fig.add_trace(go.Scatter(
+            x=dates, y=r["xgb_pred_all"], mode="lines",
+            name=f"XGBoost (MAE=${r.get('xgb_mae', 0):.0f})",
+            line=dict(color="#111827", width=2),
             legendgroup="models",
         ))
 
-        # XGBoost (dark solid)
-        if "xgb_pred_all" in r:
-            fig.add_trace(go.Scatter(
-                x=dates, y=r["xgb_pred_all"], mode="lines",
-                name=f"XGBoost (MAE=${r['xgb_mae']:.0f})",
-                line=dict(color="#111827", width=2),
-                legendgroup="models",
-            ))
-
-        # Train/test split line
-        fig.add_shape(
-            type="line",
-            x0=split_date, x1=split_date, y0=0, y1=1,
-            yref="paper", line=dict(color="#059669", width=1.5, dash="dot"),
-        )
-        fig.add_annotation(
-            x=split_date, y=1.05, yref="paper",
-            text="Train | Test", showarrow=False,
-            font=dict(color="#059669", size=10),
-        )
-
-        fig.update_layout(
-            title=dict(
-                text=f"{kw}  —  Predicted: ${r['predicted_price']:.0f}  ({r['pct_change']:+.1f}%)",
-                font=dict(color="#111827", size=14),
-            ),
-            xaxis_title="Date", yaxis_title="Price (USD)",
-            height=400,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#6b7280", size=11),
-            xaxis=dict(gridcolor="#f3f4f6", tickfont=dict(color="#9ca3af")),
-            yaxis=dict(gridcolor="#f3f4f6", tickfont=dict(color="#9ca3af")),
-            margin=dict(l=0, r=20, t=50, b=20),
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-                bgcolor="rgba(0,0,0,0)", font=dict(color="#374151", size=10),
-            ),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    # ── Item Type 价格分布箱线图 ──────────────────────────────────
-    st.markdown('<div class="section-title">Price Distribution by Item Type</div>', unsafe_allow_html=True)
-
-    import price_model as _pm
-    box_df = pred_df[pred_df["keyword"].isin(_pm.TARGET_KEYWORDS)].copy()
-    box_df["label"] = box_df["keyword"].apply(
-        lambda x: x if len(x) <= 22 else x[:20] + "..."
+    fig.add_shape(
+        type="line",
+        x0=split_date, x1=split_date, y0=0, y1=1,
+        yref="paper", line=dict(color="#059669", width=1.5, dash="dot"),
+    )
+    fig.add_annotation(
+        x=split_date, y=1.05, yref="paper",
+        text="Train | Test", showarrow=False,
+        font=dict(color="#059669", size=10),
     )
 
-    fig_box = go.Figure()
-    for itype in ["jacket", "pants", "hoodie", "shirt", "tee", "shoes", "other"]:
-        sub = box_df[box_df["item_type"] == itype]
-        if sub.empty:
-            continue
-        fig_box.add_trace(go.Box(
-            x=sub["label"], y=sub["sold_price"],
-            name=itype.capitalize(),
-            marker_color=ITEM_TYPE_COLORS.get(itype, "#9ca3af"),
-            boxmean=True,
-        ))
-
-    fig_box.update_layout(
-        boxmode="group",
+    fig.update_layout(
+        xaxis_title="Date", yaxis_title="Price (USD)",
+        height=420,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#6b7280", size=11),
-        yaxis=dict(title="Sold Price (USD)", gridcolor="#f3f4f6", tickfont=dict(color="#9ca3af")),
-        xaxis=dict(tickfont=dict(color="#374151", size=10)),
-        height=450,
-        margin=dict(l=0, r=20, t=10, b=20),
+        xaxis=dict(gridcolor="#f3f4f6", tickfont=dict(color="#9ca3af")),
+        yaxis=dict(gridcolor="#f3f4f6", tickfont=dict(color="#9ca3af")),
+        margin=dict(l=0, r=20, t=20, b=20),
         legend=dict(
-            bgcolor="rgba(0,0,0,0)", font=dict(color="#374151", size=10),
             orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+            bgcolor="rgba(0,0,0,0)", font=dict(color="#374151", size=10),
         ),
     )
-    st.plotly_chart(fig_box, use_container_width=True)
-
-    # ── MAE 对比柱状图 ────────────────────────────────────────────
-    st.markdown('<div class="section-title">Model Comparison — MAE (lower is better)</div>', unsafe_allow_html=True)
-
-    items = [r["keyword"] for r in pred_results]
-    lr_maes = [r["lr_mae"] for r in pred_results]
-
-    fig_bar = go.Figure()
-    fig_bar.add_trace(go.Bar(
-        x=items, y=lr_maes, name="Linear Regression",
-        marker_color="#9ca3af",
-        text=[f"${v:.0f}" for v in lr_maes], textposition="outside",
-    ))
-
-    if "xgb_mae" in pred_results[0]:
-        xgb_maes = [r["xgb_mae"] for r in pred_results]
-        fig_bar.add_trace(go.Bar(
-            x=items, y=xgb_maes, name="XGBoost",
-            marker_color="#dc2626",
-            text=[f"${v:.0f}" for v in xgb_maes], textposition="outside",
-        ))
-
-    fig_bar.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#6b7280", size=11),
-        yaxis=dict(title="MAE ($)", gridcolor="#f3f4f6", tickfont=dict(color="#9ca3af")),
-        xaxis=dict(tickfont=dict(color="#374151", size=10)),
-        barmode="group",
-        height=400,
-        margin=dict(l=0, r=20, t=10, b=20),
-        legend=dict(
-            bgcolor="rgba(0,0,0,0)", font=dict(color="#374151", size=10),
-            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-        ),
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
     # ── 方法说明 ──────────────────────────────────────────────────
     st.markdown("""
@@ -925,7 +834,7 @@ elif page == "Price Prediction":
         </div>
         <div class="footer-item">
           <div class="fi-title">Trend Signal</div>
-          <div class="fi-desc">Compares predicted price vs 30-day avg. &gt;5% = Rising, &lt;-5% = Declining, else Stable.</div>
+          <div class="fi-desc">Compares weighted avg predicted price vs 30-day avg. &gt;5% = Rising, &lt;-5% = Declining, else Stable.</div>
         </div>
       </div>
     </div>
