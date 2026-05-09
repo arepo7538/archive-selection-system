@@ -40,8 +40,10 @@ CONDITION_MAP = {
 
 
 def load_data() -> pd.DataFrame:
-    """加载并预处理 historical_sold.csv"""
+    """加载并预处理 historical_sold.csv，fallback 到 sample_historical.csv"""
     path = os.path.join(BASE_DIR, "historical_sold.csv")
+    if not os.path.exists(path):
+        path = os.path.join(BASE_DIR, "sample_historical.csv")
     df = pd.read_csv(path)
     df = df[df["keyword"].isin(TARGET_KEYWORDS)].copy()
     df["sold_date"] = pd.to_datetime(df["sold_date"], errors="coerce")
