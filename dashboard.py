@@ -245,14 +245,14 @@ def load_prediction_data():
         import price_model
         df_raw = price_model.load_data()
         if df_raw.empty:
-            return None, None
+            return None, None, None
         df_clean = price_model.remove_outliers(df_raw)
         df_feat = price_model.build_features(df_clean)
         results = price_model.train_and_evaluate(df_feat)
         summary = price_model.build_summary_table(results)
-        return results, summary
+        return results, summary, df_feat
     except Exception:
-        return None, None
+        return None, None, None
 
 
 try:
@@ -618,7 +618,7 @@ elif page == "Price Prediction":
 
     # 加载预测数据
     with st.spinner("Running price prediction models..."):
-        pred_results, pred_summary = load_prediction_data()
+        pred_results, pred_summary, pred_df = load_prediction_data()
 
     if pred_results is None or pred_summary is None:
         st.warning(
@@ -701,44 +701,62 @@ elif page == "Price Prediction":
     </div>
     """, unsafe_allow_html=True)
 
-    # ── 每个单品的价格走势图 ──────────────────────────────────────
+    # ── Item Type 颜色映射 ──────────────────────────────────────────
+    ITEM_TYPE_COLORS = {
+        "jacket": "#dc2626",   # red
+        "pants":  "#059669",   # green
+        "hoodie": "#7c3aed",   # purple
+        "tee":    "#2563eb",   # blue
+        "shirt":  "#d97706",   # amber
+        "shoes":  "#ec4899",   # pink
+        "other":  "#9ca3af",   # gray
+    }
+
+    # ── 每个单品的价格走势图（按 item_type 着色）─────────────────
     st.markdown('<div class="section-title">Price Trends — Actual vs Predicted</div>', unsafe_allow_html=True)
 
     for r in pred_results:
         kw = r["keyword"]
+        kw_data = pred_df[pred_df["keyword"] == kw].copy()
         dates = pd.to_datetime(r["dates"])
-        actuals = r["actuals"]
         lr_pred = r["lr_pred_all"]
         split_idx = r["train_size"]
         split_date = dates[split_idx]
         trend = r["trend"]
-        trend_color = TREND_COLORS.get(trend, "#6b7280")
 
         fig = go.Figure()
 
-        # Actual prices (blue dots)
-        fig.add_trace(go.Scatter(
-            x=dates, y=actuals, mode="markers",
-            name="Actual Sold Price",
-            marker=dict(color="#2563eb", size=7, opacity=0.7),
-        ))
+        # Actual prices — one trace per item_type for colored legend
+        for itype in sorted(kw_data["item_type"].unique()):
+            mask = kw_data["item_type"] == itype
+            sub = kw_data[mask]
+            color = ITEM_TYPE_COLORS.get(itype, "#9ca3af")
+            fig.add_trace(go.Scatter(
+                x=sub["sold_date"], y=sub["sold_price"], mode="markers",
+                name=itype.capitalize(),
+                marker=dict(color=color, size=8, opacity=0.8,
+                            line=dict(width=0.5, color="white")),
+                legendgroup="types",
+            ))
 
         # LR baseline (gray dashed)
         fig.add_trace(go.Scatter(
             x=dates, y=lr_pred, mode="lines",
             name=f"Linear Regression (MAE=${r['lr_mae']:.0f})",
             line=dict(color="#9ca3af", width=2, dash="dash"),
+            legendgroup="models",
         ))
 
-        # XGBoost (red solid)
+        # XGBoost (dark solid)
         if "xgb_pred_all" in r:
             fig.add_trace(go.Scatter(
                 x=dates, y=r["xgb_pred_all"], mode="lines",
                 name=f"XGBoost (MAE=${r['xgb_mae']:.0f})",
-                line=dict(color="#dc2626", width=2),
+                line=dict(color="#111827", width=2),
+                legendgroup="models",
             ))
 
-        # Train/test split line (add_shape to avoid plotly vline bug)
+        # Train/test split line
         fig.add_shape(
             type="line",
             x0=split_date, x1=split_date, y0=0, y1=1,
@@ -750,15 +768,13 @@ elif page == "Price Prediction":
             font=dict(color="#059669", size=10),
         )
 
-        trend_arrow = {"Rising": "&#9650;", "Declining": "&#9660;", "Stable": "&#8594;"}.get(trend, "")
-
         fig.update_layout(
             title=dict(
                 text=f"{kw}  —  Predicted: ${r['predicted_price']:.0f}  ({r['pct_change']:+.1f}%)",
                 font=dict(color="#111827", size=14),
             ),
             xaxis_title="Date", yaxis_title="Price (USD)",
-            height=380,
+            height=400,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#6b7280", size=11),
@@ -771,6 +787,43 @@ elif page == "Price Prediction":
             ),
         )
         st.plotly_chart(fig, use_container_width=True)
+
+    # ── Item Type 价格分布箱线图 ──────────────────────────────────
+    st.markdown('<div class="section-title">Price Distribution by Item Type</div>', unsafe_allow_html=True)
+
+    import price_model as _pm
+    box_df = pred_df[pred_df["keyword"].isin(_pm.TARGET_KEYWORDS)].copy()
+    box_df["label"] = box_df["keyword"].apply(
+        lambda x: x if len(x) <= 22 else x[:20] + "..."
+    )
+
+    fig_box = go.Figure()
+    for itype in ["jacket", "pants", "hoodie", "shirt", "tee", "shoes", "other"]:
+        sub = box_df[box_df["item_type"] == itype]
+        if sub.empty:
+            continue
+        fig_box.add_trace(go.Box(
+            x=sub["label"], y=sub["sold_price"],
+            name=itype.capitalize(),
+            marker_color=ITEM_TYPE_COLORS.get(itype, "#9ca3af"),
+            boxmean=True,
+        ))
+
+    fig_box.update_layout(
+        boxmode="group",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#6b7280", size=11),
+        yaxis=dict(title="Sold Price (USD)", gridcolor="#f3f4f6", tickfont=dict(color="#9ca3af")),
+        xaxis=dict(tickfont=dict(color="#374151", size=10)),
+        height=450,
+        margin=dict(l=0, r=20, t=10, b=20),
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)", font=dict(color="#374151", size=10),
+            orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+        ),
+    )
+    st.plotly_chart(fig_box, use_container_width=True)
 
     # ── MAE 对比柱状图 ────────────────────────────────────────────
     st.markdown('<div class="section-title">Model Comparison — MAE (lower is better)</div>', unsafe_allow_html=True)
@@ -820,11 +873,11 @@ elif page == "Price Prediction":
         </div>
         <div class="footer-item">
           <div class="fi-title">Features</div>
-          <div class="fi-desc">Time features (week, month, day), item condition, follower count, and 7/14/30-day rolling price averages.</div>
+          <div class="fi-desc">Time features, item condition, follower count, item type (jacket/pants/hoodie/tee/shirt/shoes), and 7/14/30-day rolling price averages.</div>
         </div>
         <div class="footer-item">
           <div class="fi-title">Models</div>
-          <div class="fi-desc">Linear Regression (baseline) vs XGBoost (gradient-boosted trees). 80/20 chronological train/test split.</div>
+          <div class="fi-desc">Linear Regression (baseline) vs XGBoost (conservative: depth=3, n=50, min_child=5). 80/20 chronological split + 3-fold time-series CV.</div>
         </div>
         <div class="footer-item">
           <div class="fi-title">Trend Signal</div>
