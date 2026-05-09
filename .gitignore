@@ -1,0 +1,17 @@
+# 数据文件（每周自动生成，不纳入版本控制）
+*.csv
+
+# 环境变量 / 密钥
+.env
+.env.*
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS 系统文件
+.DS_Store
+
+# Claude Code 工作目录
+.claude/
