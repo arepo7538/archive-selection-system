@@ -88,4 +88,4 @@ jupyter notebook price_prediction.ipynb     # Price model deep dive
 
 ## Live Dashboard
 
-[**archive-selection-system on Streamlit Cloud**](https://archive-selection-system.streamlit.app/)
+[**archive-selection-system on Streamlit Cloud**](https://archive-selection-system-2qhfvjhxgpcsauqfsqkzbm.streamlit.app/)
