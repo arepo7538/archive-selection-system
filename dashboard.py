@@ -1442,6 +1442,117 @@ elif page == "🤖 AI Analysis":
             else:
                 st.info("No report yet")
 
+    # ── Module 1: Brand Background ────────────────────────────────
+    display_kw = result.get("keyword", kw if "kw" in dir() else "")
+    with st.expander("📖 Brand Background"):
+        try:
+            cache_key = f"brand_bio_{display_kw}"
+            if cache_key not in st.session_state:
+                from openai import OpenAI as _OAI
+                _client = _OAI(
+                    api_key=os.environ.get("DEEPSEEK_API_KEY"),
+                    base_url="https://api.deepseek.com",
+                )
+                with st.spinner("Loading brand history..."):
+                    _resp = _client.chat.completions.create(
+                        model="deepseek-chat",
+                        messages=[
+                            {"role": "system", "content": (
+                                "You are an archive fashion historian. "
+                                "Write a concise 150-word brand background covering: "
+                                "1. Founded year and designer "
+                                "2. Most iconic era/collection "
+                                "3. Why it matters in archive resale market today. "
+                                "Write in English, professional but accessible tone."
+                            )},
+                            {"role": "user", "content": f"Brand/item: {display_kw}"},
+                        ],
+                        max_tokens=300,
+                    )
+                st.session_state[cache_key] = _resp.choices[0].message.content
+            st.markdown(st.session_state[cache_key])
+        except Exception as _e:
+            st.info(f"Brand background unavailable: {_e}")
+
+    # ── Module 2: Market Heat Trend ───────────────────────────────
+    st.markdown("### 📈 Market Heat Trend")
+    try:
+        import plotly.graph_objects as _go
+        _fig = _go.Figure()
+
+        # Data source 1: Google Trends
+        try:
+            from social_signals import fetch_google_trends
+            _brand_name = (
+                " ".join(display_kw.split()[:2])
+                if len(display_kw.split()) > 1
+                else display_kw
+            )
+            _trends_data = fetch_google_trends(_brand_name)
+            if _trends_data is not None and len(_trends_data) > 0:
+                _weeks  = list(range(len(_trends_data)))
+                _values = _trends_data.iloc[:, 0].tolist()
+                _fig.add_trace(_go.Scatter(
+                    x=_weeks,
+                    y=_values,
+                    name="Search Interest",
+                    line=dict(color="#374151", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(55,65,81,0.08)",
+                ))
+        except Exception:
+            pass
+
+        # Data source 2: Grailed historical_sold.csv
+        try:
+            _hist_path = os.path.join(BASE_DIR, "historical_sold.csv")
+            if os.path.exists(_hist_path):
+                _hist = pd.read_csv(_hist_path)
+                if display_kw in _hist["keyword"].values:
+                    _kd = _hist[_hist["keyword"] == display_kw].copy()
+                    _kd["sold_date"] = pd.to_datetime(_kd["sold_date"])
+                    _monthly = (
+                        _kd.groupby(_kd["sold_date"].dt.to_period("M"))
+                        .size()
+                        .reset_index()
+                    )
+                    _monthly.columns = ["month", "sales"]
+                    _monthly["month_str"] = _monthly["month"].astype(str)
+                    _fig.add_trace(_go.Scatter(
+                        x=_monthly["month_str"],
+                        y=_monthly["sales"],
+                        name="Monthly Sales (Grailed)",
+                        line=dict(color="#9ca3af", width=1.5, dash="dot"),
+                        yaxis="y2",
+                    ))
+        except Exception:
+            pass
+
+        _fig.update_layout(
+            height=280,
+            margin=dict(l=0, r=0, t=30, b=0),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="DM Sans", size=12, color="#374151"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            xaxis=dict(showgrid=True, gridcolor="#f3f4f6", title="Week (last 12 months)"),
+            yaxis=dict(showgrid=True, gridcolor="#f3f4f6", title="Search Interest"),
+            yaxis2=dict(overlaying="y", side="right", title="Monthly Sales", showgrid=False),
+            hovermode="x unified",
+        )
+
+        if len(_fig.data) > 0:
+            st.plotly_chart(_fig, use_container_width=True)
+            st.caption(
+                "Search Interest: Google Trends (normalized 0–100)  ·  "
+                "Monthly Sales: Grailed historical data"
+            )
+        else:
+            st.info("Trend data unavailable for this keyword.")
+
+    except Exception as _e:
+        st.info(f"Trend chart unavailable: {_e}")
+
     # ── 历史记录 ──────────────────────────────────────────────────
     history = st.session_state.get("ai_history", [])
     if history:
