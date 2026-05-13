@@ -20,6 +20,130 @@ st.set_page_config(
     layout="wide",
 )
 
+# ── 暗黑编辑风主题 CSS ────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'DM Sans', sans-serif;
+}
+
+h1, h2, h3 {
+    font-family: 'Space Mono', monospace !important;
+    letter-spacing: -0.02em;
+}
+
+[data-testid="stSidebar"] {
+    background: #0a0a0a !important;
+    border-right: 1px solid #222;
+}
+
+[data-testid="stSidebar"] * {
+    color: #e0e0e0 !important;
+}
+
+[data-testid="stSidebar"] .stButton button {
+    background: transparent !important;
+    border: 1px solid #333 !important;
+    color: #999 !important;
+    font-family: 'Space Mono', monospace !important;
+    font-size: 11px !important;
+    letter-spacing: 0.05em !important;
+    text-transform: uppercase !important;
+    border-radius: 0 !important;
+    transition: all 0.2s !important;
+}
+
+[data-testid="stSidebar"] .stButton button:hover {
+    border-color: #fff !important;
+    color: #fff !important;
+    background: #111 !important;
+}
+
+.main .block-container {
+    background: #0d0d0d;
+    padding-top: 2rem;
+}
+
+.stButton > button[kind="primary"] {
+    background: #fff !important;
+    color: #000 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-family: 'Space Mono', monospace !important;
+    font-size: 12px !important;
+    letter-spacing: 0.1em !important;
+    text-transform: uppercase !important;
+    font-weight: 700 !important;
+    padding: 0.6rem 2rem !important;
+    transition: all 0.2s !important;
+}
+
+.stButton > button[kind="primary"]:hover {
+    background: #e0e0e0 !important;
+}
+
+.stTextInput input {
+    background: #111 !important;
+    border: 1px solid #333 !important;
+    border-radius: 0 !important;
+    color: #fff !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+.stTextInput input:focus {
+    border-color: #fff !important;
+    box-shadow: none !important;
+}
+
+.stDataFrame {
+    border: 1px solid #222 !important;
+}
+
+[data-testid="metric-container"] {
+    background: #111 !important;
+    border: 1px solid #222 !important;
+    border-radius: 0 !important;
+    padding: 1rem !important;
+}
+
+hr {
+    border-color: #222 !important;
+}
+
+[data-testid="stStatus"] {
+    background: #111 !important;
+    border: 1px solid #333 !important;
+    border-radius: 0 !important;
+    font-family: 'Space Mono', monospace !important;
+    font-size: 12px !important;
+}
+
+.ai-report {
+    background: #111;
+    border-left: 2px solid #fff;
+    padding: 1.5rem;
+    margin-top: 1rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #e0e0e0;
+}
+
+.page-header {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #666;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid #222;
+    padding-bottom: 1rem;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── 全局 CSS ─────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -998,6 +1122,7 @@ elif page == "🤖 AI Analysis":
                 st.rerun()
 
     # ── 页头 ──────────────────────────────────────────────────────
+    st.markdown('<p class="page-header">ARCHIVE MARKET INTELLIGENCE — AI ANALYSIS</p>', unsafe_allow_html=True)
     st.markdown("""
     <div class="dash-header">
       <div class="dash-title">🤖 AI Analysis</div>
@@ -1204,7 +1329,7 @@ elif page == "🤖 AI Analysis":
         with col_right:
             st.markdown("**AI 分析报告**")
             if report:
-                st.markdown(report)
+                st.markdown(f'<div class="ai-report">{report}</div>', unsafe_allow_html=True)
             else:
                 st.info("暂无分析报告")
 
