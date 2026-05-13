@@ -2,22 +2,32 @@
 
 A quantitative analysis system for identifying and evaluating high-potential archive fashion items on the resale market. It scrapes Grailed marketplace data, scores items on scarcity/velocity/hype/momentum, predicts price trends with ML models, and presents everything in an interactive dashboard.
 
-## System Architecture
+## LangGraph Agent Pipeline
 
 ```
-Discovery              Scraping             Scoring             Prediction           Decision
-──────────           ──────────           ──────────           ──────────           ──────────
-                     grailed_scraper.py   scorecard.py         historical_          dashboard.py
-discovery.py   ───>  (listings/sold/      (weighted scoring    scraper.py    ───>   (interactive
-(trend scan,          totals from          across 4             (180-day              Streamlit
- brand hype           Algolia API)         dimensions)          sold history)         dashboard)
- detection)               │                    │                    │                    │
-                          ▼                    ▼                    ▼                    ▼
-                    grailed_listings.csv  scorecard.csv       historical_sold.csv   Selection +
-                    grailed_sold.csv                                                Price
-                    grailed_totals.csv                        price_model.py        Prediction
-                                                              (LR + XGBoost)        pages
+User input (any keyword — English or Chinese)
+↓
+[preprocess]        Chinese detection → auto-translation via DeepSeek
+↓
+[fetch_data]        Real-time supply/demand data from Grailed Algolia API
+↓
+[validator]         Supply < 10? → auto-relax keyword and retry (max 2×)
+↓                 ↑_____________________________|
+[celebrity_signal]  Reddit + Google Trends + News RSS celebrity catalyst detection
+↓
+[score]             4-dimension quantitative scoring
+                    (Supply/Demand 35% + Velocity 30% + Hype 25% + Momentum 10%)
+↓
+[analyze]           DeepSeek generates analysis report
+                    buzz_level=high triggers "Celebrity Effect Window" recommendation
 ```
+
+**Key capabilities:**
+- Real-time analysis for any keyword — not limited to a preset list
+- Chinese input auto-translation (e.g. 巴黎世家 → Balenciaga)
+- Conditional edges enable autonomous retries with automatic keyword fallback
+- `app.stream(stream_mode="updates")` streams live node progress to the dashboard
+- Three-source celebrity catalyst aggregation; `buzz_level=high` triggers a timed buy-window recommendation
 
 ## Modules
 
@@ -33,7 +43,7 @@ discovery.py   ───>  (listings/sold/      (weighted scoring    scraper.py 
 
 ## AI Analysis
 
-- **LangGraph multi-agent workflow**: preprocess → fetch_data → validator → score → analyze
+- **LangGraph multi-agent workflow**: preprocess → fetch_data → validator → celebrity_signal → score → analyze
 - **Arbitrary keyword analysis**: not limited to a fixed brand list — any keyword works in real time
 - **Chinese input auto-translation**: e.g. 巴黎世家 → Balenciaga
 - **Automatic keyword relaxation**: falls back to a broader query when data is insufficient
