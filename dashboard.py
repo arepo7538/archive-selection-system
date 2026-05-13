@@ -1363,6 +1363,7 @@ elif page == "🤖 AI Analysis":
         if market_data.get("error"):
             st.error(f"Data fetch failed: {market_data['error']}")
 
+        display_kw = result.get("keyword", "")
         col_left, col_right = st.columns([1, 1], gap="medium")
 
         # ── 左栏：原始市场数据 ────────────────────────────────────
@@ -1434,53 +1435,51 @@ elif page == "🤖 AI Analysis":
                         unsafe_allow_html=True,
                     )
 
-        # ── Right column: AI report ───────────────────────────────
+        # ── Right column: Brand Background → AI report ───────────
         with col_right:
+            with st.expander("Brand Background"):
+                try:
+                    cache_key = f"brand_bio_{display_kw}"
+                    if cache_key not in st.session_state:
+                        from openai import OpenAI as _OAI
+                        _client = _OAI(
+                            api_key=os.environ.get("DEEPSEEK_API_KEY"),
+                            base_url="https://api.deepseek.com",
+                        )
+                        with st.spinner("Loading brand history..."):
+                            _resp = _client.chat.completions.create(
+                                model="deepseek-chat",
+                                messages=[
+                                    {"role": "system", "content": (
+                                        "You are an archive fashion historian. "
+                                        "Write a concise 150-word brand background covering: "
+                                        "1. Founded year and designer "
+                                        "2. Most iconic era/collection "
+                                        "3. Why it matters in archive resale market today. "
+                                        "Write in English, professional but accessible tone."
+                                    )},
+                                    {"role": "user", "content": f"Brand/item: {display_kw}"},
+                                ],
+                                max_tokens=300,
+                            )
+                        st.session_state[cache_key] = _resp.choices[0].message.content
+                    st.markdown(st.session_state[cache_key])
+                except Exception as _e:
+                    st.info(f"Brand background unavailable: {_e}")
+
             st.markdown("**AI Analysis Report**")
             if report:
                 st.markdown(f'<div class="ai-report">{report}</div>', unsafe_allow_html=True)
             else:
                 st.info("No report yet")
 
-    # ── Module 1: Brand Background ────────────────────────────────
-    display_kw = result.get("keyword", kw if "kw" in dir() else "")
-    with st.expander("📖 Brand Background"):
-        try:
-            cache_key = f"brand_bio_{display_kw}"
-            if cache_key not in st.session_state:
-                from openai import OpenAI as _OAI
-                _client = _OAI(
-                    api_key=os.environ.get("DEEPSEEK_API_KEY"),
-                    base_url="https://api.deepseek.com",
-                )
-                with st.spinner("Loading brand history..."):
-                    _resp = _client.chat.completions.create(
-                        model="deepseek-chat",
-                        messages=[
-                            {"role": "system", "content": (
-                                "You are an archive fashion historian. "
-                                "Write a concise 150-word brand background covering: "
-                                "1. Founded year and designer "
-                                "2. Most iconic era/collection "
-                                "3. Why it matters in archive resale market today. "
-                                "Write in English, professional but accessible tone."
-                            )},
-                            {"role": "user", "content": f"Brand/item: {display_kw}"},
-                        ],
-                        max_tokens=300,
-                    )
-                st.session_state[cache_key] = _resp.choices[0].message.content
-            st.markdown(st.session_state[cache_key])
-        except Exception as _e:
-            st.info(f"Brand background unavailable: {_e}")
-
     # ── Module 2: Market Heat Trend ───────────────────────────────
-    st.markdown("### 📈 Market Heat Trend")
+    st.markdown("### MARKET HEAT TREND")
     try:
         import plotly.graph_objects as _go
         _fig = _go.Figure()
 
-        # Data source 1: Google Trends
+        # Data source 1: Google Trends (with debug output)
         try:
             from social_signals import fetch_google_trends
             _brand_name = (
@@ -1489,6 +1488,11 @@ elif page == "🤖 AI Analysis":
                 else display_kw
             )
             _trends_data = fetch_google_trends(_brand_name)
+            st.write(
+                "debug:",
+                type(_trends_data),
+                _trends_data.columns.tolist() if hasattr(_trends_data, "columns") else _trends_data,
+            )
             if _trends_data is not None and len(_trends_data) > 0:
                 _weeks  = list(range(len(_trends_data)))
                 _values = _trends_data.iloc[:, 0].tolist()
@@ -1500,8 +1504,8 @@ elif page == "🤖 AI Analysis":
                     fill="tozeroy",
                     fillcolor="rgba(55,65,81,0.08)",
                 ))
-        except Exception:
-            pass
+        except Exception as _te:
+            st.write("trends error:", str(_te))
 
         # Data source 2: Grailed historical_sold.csv
         try:
