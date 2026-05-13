@@ -33,11 +33,11 @@ discovery.py   ───>  (listings/sold/      (weighted scoring    scraper.py 
 
 ## AI Analysis
 
-- **LangGraph多Agent工作流**：preprocess → fetch_data → validator → score → analyze
-- **支持任意关键词实时分析**（不限于固定列表）
-- **中文输入自动翻译**（巴黎世家 → Balenciaga）
-- **关键词自动放宽**：数据不足时自动退一级重试
-- **流式进度展示**：每个Agent节点实时反馈
+- **LangGraph multi-agent workflow**: preprocess → fetch_data → validator → score → analyze
+- **Arbitrary keyword analysis**: not limited to a fixed brand list — any keyword works in real time
+- **Chinese input auto-translation**: e.g. 巴黎世家 → Balenciaga
+- **Automatic keyword relaxation**: falls back to a broader query when data is insufficient
+- **Streaming progress**: each agent node reports status in real time
 
 ## Tech Stack
 
