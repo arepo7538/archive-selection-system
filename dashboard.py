@@ -198,6 +198,29 @@ div[data-testid="stVerticalBlock"] > div {
     background-color: #374151 !important;
 }
 
+[data-testid="stSlider"] div[role="slider"] {
+    background-color: #374151 !important;
+}
+[data-testid="stSlider"] > div > div > div > div {
+    background: linear-gradient(to right, #374151, #374151) !important;
+}
+.stSlider [data-baseweb="slider"] div[role="slider"] {
+    background-color: #374151 !important;
+    border-color: #374151 !important;
+}
+
+[data-baseweb="tag"] {
+    background-color: #f3f4f6 !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 6px !important;
+}
+[data-baseweb="tag"] span {
+    color: #374151 !important;
+}
+[data-baseweb="tag"] button {
+    color: #9ca3af !important;
+}
+
 [data-testid="stMultiSelect"] span[data-baseweb="tag"] {
     background-color: #f3f4f6 !important;
     border: 1px solid #d1d5db !important;
@@ -1205,32 +1228,32 @@ elif page == "🤖 AI Analysis":
     </div>
     """, unsafe_allow_html=True)
 
-    # API key 检查提示
+    # API key check
     if not os.environ.get("DEEPSEEK_API_KEY"):
         st.warning(
-            "⚠️ 未检测到 DEEPSEEK_API_KEY。"
-            "请在终端运行：`export DEEPSEEK_API_KEY='your-key'`，然后重启 Streamlit。"
+            "⚠️ DEEPSEEK_API_KEY not detected. "
+            "Run `export DEEPSEEK_API_KEY='your-key'` in your terminal and restart Streamlit."
         )
 
-    # ── 输入行：文本框 + 按钮 ─────────────────────────────────────
+    # ── Input row: text field + button ───────────────────────────
     col_input, col_btn = st.columns([5, 1])
     with col_input:
         keyword_input = st.text_input(
             "keyword",
             key="ai_kw_field",
-            placeholder="支持中英文输入，如：巴黎世家、马吉拉、Number Nine AW03",
+            placeholder="Enter any keyword, e.g. Helmut Lang SS99, Number Nine AW03, Balenciaga",
             label_visibility="collapsed",
         )
     with col_btn:
-        analyze_clicked = st.button("开始分析", type="primary", use_container_width=True)
+        analyze_clicked = st.button("Analyze", type="primary", use_container_width=True)
 
     # ── 触发分析 ──────────────────────────────────────────────────
     if analyze_clicked:
         kw = (keyword_input or "").strip()
         if not kw:
-            st.error("请输入关键词后再点击分析。")
+            st.error("Please enter a keyword before clicking Analyze.")
         elif not os.environ.get("DEEPSEEK_API_KEY"):
-            st.error("请先设置 DEEPSEEK_API_KEY 环境变量再运行分析。")
+            st.error("Please set the DEEPSEEK_API_KEY environment variable before running analysis.")
         else:
             from agent import app as agent_app
 
@@ -1244,8 +1267,8 @@ elif page == "🤖 AI Analysis":
             result = {"keyword": kw}
 
             try:
-                with st.status("🔄 Agent 正在分析...", expanded=True) as status:
-                    st.write("🌐 **Step 0** — 检测输入语言...")
+                with st.status("🔄 Agent running...", expanded=True) as status:
+                    st.write("🌐 **Step 0** — Detecting input language...")
 
                     for event in agent_app.stream(initial_state, stream_mode="updates"):
                         node_name = list(event.keys())[0]
@@ -1258,62 +1281,59 @@ elif page == "🤖 AI Analysis":
                             if node_output.get("was_translated"):
                                 orig = node_output.get("original_keyword", kw)
                                 translated = node_output.get("keyword", "")
-                                st.write(f"✅ Step 0 完成 — 已将 **{orig}** 识别为 **{translated}**")
+                                st.write(f"✅ Step 0 done — Translated **{orig}** → **{translated}**")
                             else:
-                                st.write("✅ Step 0 完成 — 英文输入，直接搜索")
-                            st.write("🔍 **Step 1** — 正在抓取实时市场数据（约60秒）...")
+                                st.write("✅ Step 0 done — English input, searching directly")
+                            st.write("🔍 **Step 1** — Fetching live market data (~60s)...")
 
                         elif node_name == "fetch_data":
-                            # 多次重试时每轮都会触发，仅记录数据，不宣布下一步
                             pass
 
                         elif node_name == "validator":
                             md = result.get("market_data", {})
                             supply = md.get("supply_count", 0)
                             if node_output.get("keyword_relaxed"):
-                                # 触发了放宽重试
                                 relaxed_kw = node_output.get("keyword", "")
                                 st.write(
-                                    f"🔄 数据不足（{supply} 件），自动放宽为 "
-                                    f"**'{relaxed_kw}'** 重试..."
+                                    f"🔄 Low supply ({supply} listings) — broadening keyword to "
+                                    f"**'{relaxed_kw}'**, retrying..."
                                 )
                             else:
-                                # 数据充足，继续流程
                                 demand = md.get("demand_count_30d", 0)
                                 s_str  = f"{int(supply):,}" if supply else "?"
                                 d_str  = f"{int(demand):,}" if demand else "?"
                                 st.write(
-                                    f"✅ Step 1 完成 — 在售 **{s_str}** 件，"
-                                    f"近30天成交 **{d_str}** 件"
+                                    f"✅ Step 1 done — **{s_str}** listed, "
+                                    f"**{d_str}** sold in last 30 days"
                                 )
-                                st.write("⭐ **Step 2.5** — 检测明星催化剂信号...")
+                                st.write("⭐ **Step 2.5** — Checking celebrity catalyst signals...")
 
                         elif node_name == "celebrity_signal":
                             buzz   = node_output.get("celebrity_data", {})
                             level  = buzz.get("buzz_level", "none")
                             celeb  = buzz.get("celebrity_mention")
                             if level == "high":
-                                mention_str = f"**{celeb}**" if celeb else "明星信号"
-                                st.write(f"⚡ 检测到高热度明星信号！{mention_str}")
+                                mention_str = f"**{celeb}**" if celeb else "celebrity signal"
+                                st.write(f"⚡ High-buzz celebrity signal detected! {mention_str}")
                             elif level in ("medium", "low"):
-                                st.write(f"✅ 明星信号：{level}")
+                                st.write(f"✅ Celebrity signal: {level}")
                             else:
-                                st.write("✅ 未检测到明星催化剂信号")
-                            st.write("📊 **Step 3** — 计算供需评分...")
+                                st.write("✅ No celebrity catalyst detected")
+                            st.write("📊 **Step 3** — Calculating scarcity score...")
 
                         elif node_name == "score":
                             sd    = node_output.get("score_data", {})
                             pp    = node_output.get("price_prediction") or {}
                             score = sd.get("total_score", "?")
                             pred_val = pp.get("predicted_price")
-                            pred_str = f"，预测价 **${pred_val:.0f}**" if pred_val is not None else ""
-                            st.write(f"✅ Step 3 完成 — 综合评分 **{score}/10**{pred_str}")
-                            st.write("🤖 **Step 4** — AI 正在生成分析报告...")
+                            pred_str = f", predicted price **${pred_val:.0f}**" if pred_val is not None else ""
+                            st.write(f"✅ Step 3 done — Composite score **{score}/10**{pred_str}")
+                            st.write("🤖 **Step 4** — AI generating analysis report...")
 
                         elif node_name == "analyze":
-                            st.write("✅ Step 4 完成 — 报告生成完毕")
+                            st.write("✅ Step 4 done — Report ready")
 
-                    status.update(label="✅ 分析完成", state="complete")
+                    status.update(label="✅ Analysis complete", state="complete")
 
                 result["keyword"] = kw
                 st.session_state["ai_result"] = result
@@ -1327,7 +1347,7 @@ elif page == "🤖 AI Analysis":
                 st.session_state["ai_history"] = st.session_state["ai_history"][:10]
 
             except Exception as e:
-                st.error(f"分析失败：{e}")
+                st.error(f"Analysis failed: {e}")
                 st.session_state["ai_result"] = None
 
     # ── 结果展示 ──────────────────────────────────────────────────
@@ -1341,7 +1361,7 @@ elif page == "🤖 AI Analysis":
         st.markdown('<div class="section-title">Analysis Result</div>', unsafe_allow_html=True)
 
         if market_data.get("error"):
-            st.error(f"数据抓取失败：{market_data['error']}")
+            st.error(f"Data fetch failed: {market_data['error']}")
 
         col_left, col_right = st.columns([1, 1], gap="medium")
 
@@ -1358,8 +1378,8 @@ elif page == "🤖 AI Analysis":
             s_ratio  = score_data.get("supply_demand_ratio")
             total_s  = score_data.get("total_score")
 
-            supply_str = f"{int(supply):,} 件" if supply is not None else "—"
-            demand_str = f"{int(demand):,} 件" if demand is not None else "—"
+            supply_str = f"{int(supply):,}" if supply is not None else "—"
+            demand_str = f"{int(demand):,}" if demand is not None else "—"
             avg_px_str = f"${avg_px:.0f}" if avg_px is not None else "—"
             range_str  = (f"${min_px:.0f} – ${max_px:.0f}"
                           if min_px is not None and max_px is not None else "—")
@@ -1379,21 +1399,21 @@ elif page == "🤖 AI Analysis":
             <div style="border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;">
             <table class="dash-table">
               <tbody>
-                <tr><td style="width:50%; opacity:0.65">全平台在售数</td>
+                <tr><td style="width:50%; opacity:0.65">Listed</td>
                     <td style="font-weight:600">{supply_str}</td></tr>
-                <tr><td style="opacity:0.65">近30天成交量</td>
+                <tr><td style="opacity:0.65">Sold (30d)</td>
                     <td style="font-weight:600">{demand_str}</td></tr>
-                <tr><td style="opacity:0.65">当前均价</td>
+                <tr><td style="opacity:0.65">Avg Price</td>
                     <td style="font-weight:600">{avg_px_str}</td></tr>
-                <tr><td style="opacity:0.65">价格区间</td>
+                <tr><td style="opacity:0.65">Price Range</td>
                     <td style="font-weight:600">{range_str}</td></tr>
-                <tr><td style="opacity:0.65">供需比</td>
+                <tr><td style="opacity:0.65">S/D Ratio</td>
                     <td style="font-weight:600">{ratio_str}</td></tr>
-                <tr><td style="opacity:0.65">Listing 平均收藏</td>
+                <tr><td style="opacity:0.65">Avg Favorites</td>
                     <td style="font-weight:600">{fol_str}</td></tr>
-                <tr><td style="opacity:0.65">综合评分</td>
+                <tr><td style="opacity:0.65">Composite Score</td>
                     <td style="font-weight:600; color:#2563eb">{score_str}</td></tr>
-                <tr><td style="opacity:0.65">价格预测</td>
+                <tr><td style="opacity:0.65">Price Prediction</td>
                     <td style="font-weight:600">{pred_str}</td></tr>
               </tbody>
             </table>
@@ -1414,13 +1434,13 @@ elif page == "🤖 AI Analysis":
                         unsafe_allow_html=True,
                     )
 
-        # ── 右栏：AI 分析报告 ─────────────────────────────────────
+        # ── Right column: AI report ───────────────────────────────
         with col_right:
-            st.markdown("**AI 分析报告**")
+            st.markdown("**AI Analysis Report**")
             if report:
                 st.markdown(f'<div class="ai-report">{report}</div>', unsafe_allow_html=True)
             else:
-                st.info("暂无分析报告")
+                st.info("No report yet")
 
     # ── 历史记录 ──────────────────────────────────────────────────
     history = st.session_state.get("ai_history", [])
@@ -1433,7 +1453,7 @@ elif page == "🤖 AI Analysis":
                 unsafe_allow_html=True,
             )
         with clear_col:
-            if st.button("清空历史", key="clear_ai_history"):
+            if st.button("Clear History", key="clear_ai_history"):
                 st.session_state["ai_history"] = []
                 st.session_state["ai_result"]  = None
                 st.rerun()
@@ -1467,8 +1487,8 @@ elif page == "🤖 AI Analysis":
                           align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:4px;">
                 <span style="font-weight:700; color:var(--text-color); font-size:0.88rem;">{kw_e}</span>
                 <span style="font-size:0.72rem; color:#9ca3af; white-space:nowrap;">
-                  {ts_e} &nbsp;·&nbsp; 在售 {sup_str} &nbsp;·&nbsp;
-                  成交 {dem_str} &nbsp;·&nbsp; 评分 {scr_str}/10
+                  {ts_e} &nbsp;·&nbsp; Listed {sup_str} &nbsp;·&nbsp;
+                  Sold {dem_str} &nbsp;·&nbsp; Score {scr_str}/10
                 </span>
               </div>
               <div style="font-size:0.80rem; color:var(--text-color); opacity:0.65; line-height:1.5;">{preview}</div>

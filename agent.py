@@ -447,8 +447,8 @@ def scorer_node(state: MarketAnalysisState) -> dict:
             "score_data":       score_data,
             "price_prediction": {},
             "final_report": (
-                f"关键词 '{kw}' 无有效市场数据，建议使用更精确的品牌+系列格式，"
-                "如 'Helmut Lang SS99' 而非泛词"
+                f"No valid market data found for '{kw}'. "
+                "Try a more specific brand + season format, e.g. 'Helmut Lang SS99'."
             ),
         }
     price_pred = get_price_prediction(state["keyword"])
@@ -463,13 +463,15 @@ def scorer_node(state: MarketAnalysisState) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 _SYSTEM_PROMPT = (
-    "你是二手Archive fashion市场分析师，专注日欧设计师品牌二级市场。\n"
-    "基于提供的实时市场数据，给出专业的买卖决策建议。\n"
-    "必须包含：1)市场现状概述 2)买入/观望/清货建议 3)建议价格区间 4)主要风险\n"
-    "若明星催化剂信号的 buzz_level 为 high，必须在建议中单独加一段\n"
-    "「⚡ 明星效应窗口期」，写明具体明星名字（如有）和建议买入时机\n"
-    "（通常是媒体热度高峰后 24–48 小时内）。\n"
-    "用中文回答，引用具体数据，300字以内。"
+    "Please respond in English. You are a professional second-hand archive fashion market analyst, "
+    "specialising in the secondary market for Japanese and European designer brands.\n"
+    "Based on the provided real-time market data, deliver a concise professional buy/sell recommendation.\n"
+    "Your response must cover: 1) Market Status 2) Buy / Hold / Sell Recommendation "
+    "3) Suggested Price Range 4) Key Risks\n"
+    "If the celebrity signal buzz_level is 'high', add a separate paragraph "
+    "'⚡ Celebrity Hype Window' naming the celebrity (if available) and the optimal entry timing "
+    "(typically within 24–48 hours of peak media buzz).\n"
+    "Respond in English, cite specific data points, keep under 300 words."
 )
 
 
@@ -493,27 +495,26 @@ def analyst_node(state: MarketAnalysisState) -> dict:
 
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
-    # 整理传给 LLM 的数据摘要（中文 key，便于 LLM 理解）
     data_summary = {
-        "单品名称": keyword,
-        "市场数据": {
-            "全平台在售数":    market_data.get("supply_count"),
-            "近30天成交量":    market_data.get("demand_count_30d"),
-            "当前均价":        f"${market_data.get('avg_price_usd', 'N/A')}",
-            "价格区间":        f"${market_data.get('min_price_usd', 'N/A')} – ${market_data.get('max_price_usd', 'N/A')}",
-            "listing平均收藏": market_data.get("avg_followers"),
+        "Item": keyword,
+        "Market Data": {
+            "Total Listed":      market_data.get("supply_count"),
+            "Sold (30d)":        market_data.get("demand_count_30d"),
+            "Avg Price":         f"${market_data.get('avg_price_usd', 'N/A')}",
+            "Price Range":       f"${market_data.get('min_price_usd', 'N/A')} – ${market_data.get('max_price_usd', 'N/A')}",
+            "Avg Favorites":     market_data.get("avg_followers"),
         },
-        "稀缺度评分": {
-            "综合得分":   f"{score_data.get('total_score')}/10",
-            "供需比":     score_data.get("supply_demand_ratio"),
-            "各维度细节": score_data.get("score_breakdown"),
+        "Scarcity Score": {
+            "Composite Score":   f"{score_data.get('total_score')}/10",
+            "S/D Ratio":         score_data.get("supply_demand_ratio"),
+            "Score Breakdown":   score_data.get("score_breakdown"),
         },
-        "价格预测":       price_pred if price_pred else "无历史数据",
-        "明星催化剂信号": state.get("celebrity_data") or {},
+        "Price Prediction":   price_pred if price_pred else "No historical data",
+        "Celebrity Signal":   state.get("celebrity_data") or {},
     }
 
     user_msg = (
-        "请分析以下单品的市场数据，给出专业买卖建议：\n\n"
+        "Analyse the following item's market data and provide a professional buy/sell recommendation:\n\n"
         + json.dumps(data_summary, ensure_ascii=False, indent=2)
     )
 
@@ -534,15 +535,13 @@ def analyst_node(state: MarketAnalysisState) -> dict:
             f"原始数据摘要:\n{json.dumps(data_summary, ensure_ascii=False, indent=2)}"
         )
 
-    # 翻译提示（中文输入）
     if state.get("was_translated"):
         orig = state.get("original_keyword", "")
-        report = f"📝 已将「{orig}」识别为「{keyword}」\n\n" + report
+        report = f"📝 Input «{orig}» recognised as «{keyword}»\n\n" + report
 
-    # 放宽提示（原关键词数据不足）
     if state.get("keyword_relaxed"):
         report = (
-            f"⚠️ 原关键词数据不足，已自动放宽为「{keyword}」进行分析\n\n" + report
+            f"⚠️ Insufficient data for original keyword — analysis broadened to «{keyword}»\n\n" + report
         )
 
     return {"final_report": report}
