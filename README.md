@@ -2,6 +2,23 @@
 
 A quantitative analysis system for identifying and evaluating high-potential archive fashion items on the resale market. It scrapes Grailed marketplace data, scores items on scarcity/velocity/hype/momentum, predicts price trends with ML models, and presents everything in an interactive dashboard.
 
+## System Architecture
+
+```
+Discovery              Scraping             Scoring             Prediction           Decision
+──────────           ──────────           ──────────           ──────────           ──────────
+                     grailed_scraper.py   scorecard.py         historical_          dashboard.py
+discovery.py   ───>  (listings/sold/      (weighted scoring    scraper.py    ───>   (interactive
+(trend scan,          totals from          across 4             (180-day              Streamlit
+ brand hype           Algolia API)         dimensions)          sold history)         dashboard)
+ detection)               │                    │                    │                    │
+                          ▼                    ▼                    ▼                    ▼
+                    grailed_listings.csv  scorecard.csv       historical_sold.csv   Selection +
+                    grailed_sold.csv                                                Price
+                    grailed_totals.csv                        price_model.py        Prediction
+                                                              (LR + XGBoost)        pages
+```
+
 ## LangGraph Agent Pipeline
 
 ```
