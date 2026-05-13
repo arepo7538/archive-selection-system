@@ -1477,13 +1477,7 @@ elif page == "AI Analysis":
         # ── 5. Market Heat Trend — full width ────────────────────
         st.markdown("### MARKET HEAT TREND")
 
-        _brand_name = (
-            " ".join(display_kw.split()[:2])
-            if len(display_kw.split()) > 1
-            else display_kw
-        )
-
-        # Source 1: Grailed historical monthly sales (time-series)
+        # Grailed historical monthly sales (time-series)
         _hist_plotted = False
         try:
             _hist_path = os.path.join(BASE_DIR, "historical_sold.csv")
@@ -1521,44 +1515,16 @@ elif page == "AI Analysis":
                         hovermode="x unified",
                     )
                     st.plotly_chart(_fig_hist, use_container_width=True)
+                    st.caption("Monthly sold count from Grailed historical data (180-day window)")
                     _hist_plotted = True
         except Exception:
             pass
 
-        # Source 2: Google Trends aggregated metrics (pass list, not string)
-        try:
-            from social_signals import fetch_google_trends
-            _trends_df = fetch_google_trends([_brand_name])
-            if _trends_df is not None and not _trends_df.empty:
-                _row          = _trends_df.iloc[0]
-                _recent_4w    = float(_row.get("trends_recent_4w", 0))
-                _historical   = float(_row.get("trends_historical", 0))
-                _trends_ratio = float(_row.get("trends_ratio", 1.0))
-                _fig_gt = go.Figure(go.Bar(
-                    x=["4-Week Avg", "3-Month Baseline"],
-                    y=[_recent_4w, _historical],
-                    marker_color=["#374151", "#d1d5db"],
-                    width=0.35,
-                ))
-                _fig_gt.update_layout(
-                    height=200,
-                    margin=dict(l=0, r=0, t=10, b=0),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(family="DM Sans", size=11, color="#374151"),
-                    xaxis=dict(showgrid=False),
-                    yaxis=dict(showgrid=True, gridcolor="#f3f4f6", title="Interest (0-100)"),
-                    showlegend=False,
-                )
-                st.plotly_chart(_fig_gt, use_container_width=True)
-                st.caption(
-                    f"Google Trends — recent 4-week avg is {_trends_ratio:.2f}x the 3-month baseline"
-                )
-        except Exception as _te:
-            st.caption(f"Google Trends unavailable: {_te}")
-
         if not _hist_plotted:
-            st.info("Trend data unavailable for this keyword.")
+            st.info(
+                "No historical sales data available. "
+                "Run `python historical_scraper.py` to collect data."
+            )
 
     # ── 6. Analysis History — always visible ─────────────────────
     history = st.session_state.get("ai_history", [])
