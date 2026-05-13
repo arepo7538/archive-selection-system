@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ── 页面配置 ──────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Archive Selection Dashboard",
-    page_icon="🧥",
+    page_icon="A",
     layout="wide",
 )
 
@@ -497,7 +497,7 @@ with st.sidebar:
     st.markdown("### Navigation")
     page = st.radio(
         "Page",
-        options=["Selection Dashboard", "Price Prediction", "🤖 AI Analysis"],
+        options=["Selection Dashboard", "Price Prediction", "AI Analysis"],
         label_visibility="collapsed",
     )
     st.markdown("---")
@@ -1200,7 +1200,7 @@ elif page == "Price Prediction":
 # ══════════════════════════════════════════════════════════════════
 # PAGE 3 — AI Analysis
 # ══════════════════════════════════════════════════════════════════
-elif page == "🤖 AI Analysis":
+elif page == "AI Analysis":
 
     # ── Session state 初始化 ──────────────────────────────────────
     if "ai_kw_field" not in st.session_state:
@@ -1223,7 +1223,7 @@ elif page == "🤖 AI Analysis":
     st.markdown('<p class="page-header">ARCHIVE MARKET INTELLIGENCE — AI ANALYSIS</p>', unsafe_allow_html=True)
     st.markdown("""
     <div class="dash-header">
-      <div class="dash-title">🤖 AI Analysis</div>
+      <div class="dash-title">AI Analysis</div>
       <div class="dash-meta">DeepSeek · Real-time Grailed data · ~60s per query</div>
     </div>
     """, unsafe_allow_html=True)
@@ -1231,7 +1231,7 @@ elif page == "🤖 AI Analysis":
     # API key check
     if not os.environ.get("DEEPSEEK_API_KEY"):
         st.warning(
-            "⚠️ DEEPSEEK_API_KEY not detected. "
+            "DEEPSEEK_API_KEY not detected. "
             "Run `export DEEPSEEK_API_KEY='your-key'` in your terminal and restart Streamlit."
         )
 
@@ -1267,8 +1267,8 @@ elif page == "🤖 AI Analysis":
             result = {"keyword": kw}
 
             try:
-                with st.status("🔄 Agent running...", expanded=True) as status:
-                    st.write("🌐 **Step 0** — Detecting input language...")
+                with st.status("Agent running...", expanded=True) as status:
+                    st.write("**Step 0** — Detecting input language...")
 
                     for event in agent_app.stream(initial_state, stream_mode="updates"):
                         node_name = list(event.keys())[0]
@@ -1281,10 +1281,10 @@ elif page == "🤖 AI Analysis":
                             if node_output.get("was_translated"):
                                 orig = node_output.get("original_keyword", kw)
                                 translated = node_output.get("keyword", "")
-                                st.write(f"✅ Step 0 done — Translated **{orig}** → **{translated}**")
+                                st.write(f"Step 0 done — Translated **{orig}** → **{translated}**")
                             else:
-                                st.write("✅ Step 0 done — English input, searching directly")
-                            st.write("🔍 **Step 1** — Fetching live market data (~60s)...")
+                                st.write("Step 0 done — English input, searching directly")
+                            st.write("**Step 1** — Fetching live market data (~60s)...")
 
                         elif node_name == "fetch_data":
                             pass
@@ -1295,7 +1295,7 @@ elif page == "🤖 AI Analysis":
                             if node_output.get("keyword_relaxed"):
                                 relaxed_kw = node_output.get("keyword", "")
                                 st.write(
-                                    f"🔄 Low supply ({supply} listings) — broadening keyword to "
+                                    f"Low supply ({supply} listings) — broadening keyword to "
                                     f"**'{relaxed_kw}'**, retrying..."
                                 )
                             else:
@@ -1303,10 +1303,10 @@ elif page == "🤖 AI Analysis":
                                 s_str  = f"{int(supply):,}" if supply else "?"
                                 d_str  = f"{int(demand):,}" if demand else "?"
                                 st.write(
-                                    f"✅ Step 1 done — **{s_str}** listed, "
+                                    f"Step 1 done — **{s_str}** listed, "
                                     f"**{d_str}** sold in last 30 days"
                                 )
-                                st.write("⭐ **Step 2.5** — Checking celebrity catalyst signals...")
+                                st.write("**Step 2.5** — Checking celebrity catalyst signals...")
 
                         elif node_name == "celebrity_signal":
                             buzz   = node_output.get("celebrity_data", {})
@@ -1314,12 +1314,12 @@ elif page == "🤖 AI Analysis":
                             celeb  = buzz.get("celebrity_mention")
                             if level == "high":
                                 mention_str = f"**{celeb}**" if celeb else "celebrity signal"
-                                st.write(f"⚡ High-buzz celebrity signal detected! {mention_str}")
+                                st.write(f"HIGH BUZZ DETECTED — {mention_str}")
                             elif level in ("medium", "low"):
-                                st.write(f"✅ Celebrity signal: {level}")
+                                st.write(f"Celebrity signal: {level}")
                             else:
-                                st.write("✅ No celebrity catalyst detected")
-                            st.write("📊 **Step 3** — Calculating scarcity score...")
+                                st.write("No celebrity catalyst detected")
+                            st.write("**Step 3** — Calculating scarcity score...")
 
                         elif node_name == "score":
                             sd    = node_output.get("score_data", {})
@@ -1327,13 +1327,13 @@ elif page == "🤖 AI Analysis":
                             score = sd.get("total_score", "?")
                             pred_val = pp.get("predicted_price")
                             pred_str = f", predicted price **${pred_val:.0f}**" if pred_val is not None else ""
-                            st.write(f"✅ Step 3 done — Composite score **{score}/10**{pred_str}")
-                            st.write("🤖 **Step 4** — AI generating analysis report...")
+                            st.write(f"Step 3 done — Composite score **{score}/10**{pred_str}")
+                            st.write("**Step 4** — AI generating analysis report...")
 
                         elif node_name == "analyze":
-                            st.write("✅ Step 4 done — Report ready")
+                            st.write("Step 4 done — Report ready")
 
-                    status.update(label="✅ Analysis complete", state="complete")
+                    status.update(label="Analysis complete", state="complete")
 
                 result["keyword"] = kw
                 st.session_state["ai_result"] = result
