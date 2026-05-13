@@ -20,13 +20,32 @@ st.set_page_config(
     layout="wide",
 )
 
+# ── 字体强制覆盖（最先加载）──────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300;1,9..40,400&display=swap');
+
+* {
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+html, body, div, span, p, h1, h2, h3, h4, h5, h6,
+input, button, select, textarea, label,
+[class*="css"], [class*="st-"],
+.stApp, .main, .block-container,
+[data-testid], [data-baseweb] {
+    font-family: 'DM Sans', sans-serif !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ── 暖白极简主题 CSS ──────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap');
 
 html, body, [class*="css"], .stApp {
-    font-family: 'Geist', 'DM Sans', sans-serif !important;
+    font-family: 'DM Sans', sans-serif !important;
     background-color: #f9f7f4 !important;
     color: #1a1a1a !important;
 }
