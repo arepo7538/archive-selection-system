@@ -46,6 +46,7 @@ class MarketAnalysisState(TypedDict):
     market_data: dict
     score_data: dict
     price_prediction: dict
+    celebrity_data: dict          # 明星催化剂信号
     final_report: str
     messages: list
 
@@ -407,6 +408,33 @@ def should_retry(state: MarketAnalysisState) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Node 1c — celebrity_signal_node
+# ══════════════════════════════════════════════════════════════════════════════
+
+def celebrity_signal_node(state: MarketAnalysisState) -> dict:
+    """
+    检测明星穿搭催化剂信号（Reddit + Google Trends + Google News RSS）。
+    运行在 validator 之后、score 之前，确保使用最终放宽后的关键词。
+    超时或报错时静默返回空 dict，不中断主流程。
+    """
+    print(f"[Node 1c] Detecting celebrity buzz for: '{state['keyword']}' …")
+    try:
+        from social_signals import fetch_celebrity_buzz
+
+        # 有 DEEPSEEK_API_KEY 时传入 client，启用 LLM 明星名提取；否则纯爬虫模式
+        llm_client = None
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if api_key:
+            llm_client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
+        celebrity_data = fetch_celebrity_buzz(state["keyword"], llm_client=llm_client)
+        return {"celebrity_data": celebrity_data}
+    except Exception as e:
+        print(f"[Node 1c] Celebrity signal failed ({e}), continuing without it.")
+        return {"celebrity_data": {"buzz_level": "none", "error": str(e)}}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Node 2 — scorer_node
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -438,6 +466,9 @@ _SYSTEM_PROMPT = (
     "你是二手Archive fashion市场分析师，专注日欧设计师品牌二级市场。\n"
     "基于提供的实时市场数据，给出专业的买卖决策建议。\n"
     "必须包含：1)市场现状概述 2)买入/观望/清货建议 3)建议价格区间 4)主要风险\n"
+    "若明星催化剂信号的 buzz_level 为 high，必须在建议中单独加一段\n"
+    "「⚡ 明星效应窗口期」，写明具体明星名字（如有）和建议买入时机\n"
+    "（通常是媒体热度高峰后 24–48 小时内）。\n"
     "用中文回答，引用具体数据，300字以内。"
 )
 
@@ -477,7 +508,8 @@ def analyst_node(state: MarketAnalysisState) -> dict:
             "供需比":     score_data.get("supply_demand_ratio"),
             "各维度细节": score_data.get("score_breakdown"),
         },
-        "价格预测": price_pred if price_pred else "无历史数据",
+        "价格预测":       price_pred if price_pred else "无历史数据",
+        "明星催化剂信号": state.get("celebrity_data") or {},
     }
 
     user_msg = (
@@ -526,19 +558,21 @@ def _route_after_score(state: MarketAnalysisState) -> str:
 
 
 workflow = StateGraph(MarketAnalysisState)
-workflow.add_node("preprocess", preprocessor_node)
-workflow.add_node("fetch_data", data_fetcher_node)
-workflow.add_node("validator",  validator_node)
-workflow.add_node("score",      scorer_node)
-workflow.add_node("analyze",    analyst_node)
+workflow.add_node("preprocess",       preprocessor_node)
+workflow.add_node("fetch_data",       data_fetcher_node)
+workflow.add_node("validator",        validator_node)
+workflow.add_node("celebrity_signal", celebrity_signal_node)
+workflow.add_node("score",            scorer_node)
+workflow.add_node("analyze",          analyst_node)
 
 workflow.set_entry_point("preprocess")
 workflow.add_edge("preprocess", "fetch_data")
-workflow.add_edge("fetch_data", "validator")           # 每次抓取后都经过验证
+workflow.add_edge("fetch_data", "validator")                 # 每次抓取后都经过验证
 workflow.add_conditional_edges("validator", should_retry, {
-    "retry":    "fetch_data",                          # 放宽后循环回去重抓
-    "continue": "score",
+    "retry":    "fetch_data",                                # 放宽后循环回去重抓
+    "continue": "celebrity_signal",                          # 数据充足 → 明星信号检测
 })
+workflow.add_edge("celebrity_signal", "score")
 workflow.add_conditional_edges("score", _route_after_score, {
     "analyze": "analyze",
     "skip":    END,
@@ -573,6 +607,7 @@ def analyze_item_full(keyword: str) -> dict:
         "market_data":      {},
         "score_data":       {},
         "price_prediction": {},
+        "celebrity_data":   {},
         "final_report":     "",
         "messages":         [],
     })

@@ -1163,7 +1163,8 @@ elif page == "🤖 AI Analysis":
                 "keyword": kw, "original_keyword": "", "was_translated": False,
                 "retry_count": 0, "keyword_relaxed": False,
                 "market_data": {}, "score_data": {},
-                "price_prediction": {}, "final_report": "", "messages": [],
+                "price_prediction": {}, "celebrity_data": {},
+                "final_report": "", "messages": [],
             }
             result = {"keyword": kw}
 
@@ -1210,7 +1211,20 @@ elif page == "🤖 AI Analysis":
                                     f"✅ Step 1 完成 — 在售 **{s_str}** 件，"
                                     f"近30天成交 **{d_str}** 件"
                                 )
-                                st.write("📊 **Step 2** — 计算供需评分...")
+                                st.write("⭐ **Step 2.5** — 检测明星催化剂信号...")
+
+                        elif node_name == "celebrity_signal":
+                            buzz   = node_output.get("celebrity_data", {})
+                            level  = buzz.get("buzz_level", "none")
+                            celeb  = buzz.get("celebrity_mention")
+                            if level == "high":
+                                mention_str = f"**{celeb}**" if celeb else "明星信号"
+                                st.write(f"⚡ 检测到高热度明星信号！{mention_str}")
+                            elif level in ("medium", "low"):
+                                st.write(f"✅ 明星信号：{level}")
+                            else:
+                                st.write("✅ 未检测到明星催化剂信号")
+                            st.write("📊 **Step 3** — 计算供需评分...")
 
                         elif node_name == "score":
                             sd    = node_output.get("score_data", {})
@@ -1218,11 +1232,11 @@ elif page == "🤖 AI Analysis":
                             score = sd.get("total_score", "?")
                             pred_val = pp.get("predicted_price")
                             pred_str = f"，预测价 **${pred_val:.0f}**" if pred_val is not None else ""
-                            st.write(f"✅ Step 2 完成 — 综合评分 **{score}/10**{pred_str}")
-                            st.write("🤖 **Step 3** — AI 正在生成分析报告...")
+                            st.write(f"✅ Step 3 完成 — 综合评分 **{score}/10**{pred_str}")
+                            st.write("🤖 **Step 4** — AI 正在生成分析报告...")
 
                         elif node_name == "analyze":
-                            st.write("✅ Step 3 完成 — 报告生成完毕")
+                            st.write("✅ Step 4 完成 — 报告生成完毕")
 
                     status.update(label="✅ 分析完成", state="complete")
 

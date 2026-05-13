@@ -10,6 +10,7 @@ import pandas as pd
 import time
 import requests
 from datetime import datetime
+from typing import Optional
 from pytrends.request import TrendReq
 
 
@@ -154,3 +155,151 @@ def run():
 
 if __name__ == "__main__":
     run()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 明星催化剂信号（Celebrity Buzz）
+# ══════════════════════════════════════════════════════════════════════════════
+
+def fetch_google_news_rss(keyword: str, max_results: int = 5) -> list[dict]:
+    """
+    Google News RSS 爬取，无需 API key
+    搜索词：{keyword} celebrity worn spotted fashion
+    返回: [{"title": ..., "link": ..., "published": ...}]
+    """
+    import urllib.parse
+    import urllib.request
+    from xml.etree import ElementTree
+
+    query = urllib.parse.quote(f"{keyword} celebrity worn spotted fashion")
+    url   = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            tree = ElementTree.parse(r)
+        items = tree.findall(".//item")[:max_results]
+        return [
+            {
+                "title":     i.findtext("title",   ""),
+                "link":      i.findtext("link",    ""),
+                "published": i.findtext("pubDate", ""),
+            }
+            for i in items
+        ]
+    except Exception as e:
+        print(f"[Google News RSS] 报错: {e}")
+        return []
+
+
+def _extract_celebrity_names(headlines: list, client) -> Optional[str]:
+    """
+    用 DeepSeek 从新闻标题里提取穿戴该品牌的明星名字。
+    只在 headlines 非空且传入了 llm_client 时调用；失败时静默返回 None。
+    """
+    if not headlines or client is None:
+        return None
+    try:
+        titles = "\n".join(headlines)
+        resp = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {
+                    "role":    "system",
+                    "content": (
+                        "从以下新闻标题中提取穿着该品牌/单品的明星名字。"
+                        "只返回明星名字，多个用逗号分隔，没有则返回 None。"
+                    ),
+                },
+                {"role": "user", "content": titles},
+            ],
+            max_tokens=50,
+            temperature=0.1,
+        )
+        result = resp.choices[0].message.content.strip()
+        return None if result.lower() == "none" else result
+    except Exception as e:
+        print(f"[Celebrity LLM] 提取报错: {e}")
+        return None
+
+
+def fetch_celebrity_buzz(keyword: str, llm_client=None) -> dict:
+    """
+    组合三路信号，检测是否有明星穿搭催化剂：
+      1. Reddit  — r/streetwear + r/Grailed 关键词帖子数 & upvote
+      2. Google Trends — 近4周热度 vs 历史均值比值（>1.2 视为异常上升）
+      3. Google News RSS — 近期明星相关新闻标题
+
+    返回:
+      {
+        "reddit_posts_1m":   int,
+        "reddit_ups_1m":     int,
+        "trends_ratio":      float,   # >1.2 = 近期热度高于历史均值
+        "news_headlines":    list[str],
+        "celebrity_mention": str | None,
+        "buzz_level":        "high" | "medium" | "low" | "none",
+        "fetch_date":        str,
+      }
+    """
+    import datetime as _dt
+
+    result: dict = {
+        "reddit_posts_1m":   0,
+        "reddit_ups_1m":     0,
+        "trends_ratio":      1.0,
+        "news_headlines":    [],
+        "celebrity_mention": None,
+        "buzz_level":        "none",
+        "fetch_date":        _dt.date.today().isoformat(),
+    }
+
+    # ── 1. Reddit ──────────────────────────────────────────────────────────────
+    try:
+        celeb_query   = f"{keyword} celebrity OR worn OR spotted OR wearing"
+        reddit_result = fetch_reddit_mentions(celeb_query, REDDIT_SUBREDDITS)
+        result["reddit_posts_1m"] = reddit_result.get("reddit_posts_1m", 0)
+        result["reddit_ups_1m"]   = reddit_result.get("reddit_ups_1m",   0)
+    except Exception as e:
+        print(f"[Celebrity Buzz] Reddit 报错: {e}")
+
+    # ── 2. Google Trends ───────────────────────────────────────────────────────
+    try:
+        # 取前两词作为品牌粒度，避免过细
+        parts = keyword.split()
+        brand = " ".join(parts[:2]) if len(parts) > 1 else keyword
+        df_trends = fetch_google_trends([brand], timeframe="today 1-m")
+        if not df_trends.empty:
+            result["trends_ratio"] = float(df_trends.iloc[0].get("trends_ratio", 1.0))
+    except Exception as e:
+        print(f"[Celebrity Buzz] Google Trends 报错: {e}")
+
+    # ── 3. Google News RSS ─────────────────────────────────────────────────────
+    try:
+        news = fetch_google_news_rss(keyword)
+        result["news_headlines"]    = [n["title"] for n in news[:3]]
+        result["celebrity_mention"] = _extract_celebrity_names(
+            result["news_headlines"], llm_client
+        )
+    except Exception as e:
+        print(f"[Celebrity Buzz] Google News 报错: {e}")
+
+    # ── 综合评分 → buzz_level ──────────────────────────────────────────────────
+    score = 0
+    if result["reddit_posts_1m"] >= 5:      score += 2
+    elif result["reddit_posts_1m"] >= 2:    score += 1
+    if result["trends_ratio"]     >= 1.5:   score += 2
+    elif result["trends_ratio"]   >= 1.2:   score += 1
+    if result["news_headlines"]:            score += 1
+    if result["celebrity_mention"]:         score += 2
+
+    result["buzz_level"] = (
+        "high"   if score >= 4 else
+        "medium" if score >= 2 else
+        "low"    if score >= 1 else
+        "none"
+    )
+    print(
+        f"[Celebrity Buzz] '{keyword}' → buzz={result['buzz_level']} "
+        f"(reddit={result['reddit_posts_1m']}, trends={result['trends_ratio']}, "
+        f"news={len(result['news_headlines'])}, celeb={result['celebrity_mention']})"
+    )
+    return result
