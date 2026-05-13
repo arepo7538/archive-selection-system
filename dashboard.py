@@ -23,10 +23,10 @@ st.set_page_config(
 # ── 暖白极简主题 CSS ──────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap');
 
 html, body, [class*="css"], .stApp {
-    font-family: 'Inter', sans-serif !important;
+    font-family: 'Geist', 'DM Sans', sans-serif !important;
     background-color: #f9f7f4 !important;
     color: #1a1a1a !important;
 }
@@ -175,8 +175,27 @@ div[data-testid="stVerticalBlock"] > div {
     background: #e5e0d8 !important;
 }
 
-.stProgress > div > div {
-    background: #1a1a1a !important;
+[data-testid="stProgress"] > div > div > div > div {
+    background-color: #374151 !important;
+}
+
+[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
+    background-color: #f3f4f6 !important;
+    border: 1px solid #d1d5db !important;
+    color: #374151 !important;
+    border-radius: 6px !important;
+}
+
+[data-testid="stMultiSelect"] span[data-baseweb="tag"] span {
+    color: #374151 !important;
+}
+
+[data-testid="stRadio"] label[data-checked="true"] {
+    color: #111827 !important;
+}
+
+[data-testid="stMetricValue"] {
+    color: #111827 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -282,9 +301,9 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
     top: 0; left: 0; right: 0;
     height: 3px;
 }
-.kpi-card.gold::before  { background: linear-gradient(90deg, #f59e0b, #d97706); }
-.kpi-card.blue::before  { background: linear-gradient(90deg, #3b82f6, #6366f1); }
-.kpi-card.rose::before  { background: linear-gradient(90deg, #f43f5e, #ec4899); }
+.kpi-card.gold::before  { background: #d1d5db; }
+.kpi-card.blue::before  { background: #d1d5db; }
+.kpi-card.rose::before  { background: #d1d5db; }
 .kpi-label {
     font-size: 0.68rem;
     text-transform: uppercase;
