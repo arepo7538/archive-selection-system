@@ -4,6 +4,7 @@ Archive Selection Dashboard
 """
 
 import os
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -19,7 +20,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── 全局 CSS（白色主题）─────────────────────────────────────────────
+# ── 全局 CSS ─────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 /* 减少默认间距 */
@@ -29,6 +30,11 @@ st.markdown("""
     max-width: 100% !important;
 }
 div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
+
+/* 主题适配工具类 */
+.metric-value { color: var(--text-color); }
+.report-text  { color: var(--text-color); }
+.table-label  { color: var(--text-color); opacity: 0.6; }
 
 /* 页头 */
 .dash-header {
@@ -42,7 +48,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
 .dash-title {
     font-size: 1.3rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--text-color);
     letter-spacing: 0.01em;
     white-space: nowrap;
 }
@@ -62,7 +68,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
     margin-bottom: 0.7rem;
 }
 .ov-card {
-    background: #f9fafb;
+    background: var(--background-color);
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     padding: 12px 14px;
@@ -101,7 +107,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
     margin-bottom: 0.7rem;
 }
 .kpi-card {
-    background: #ffffff;
+    background: var(--background-color);
     border: 1px solid #e5e7eb;
     border-radius: 10px;
     padding: 12px 14px;
@@ -128,7 +134,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
 .kpi-value {
     font-size: 0.9rem;
     font-weight: 700;
-    color: #111827;
+    color: var(--text-color);
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -157,7 +163,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
 /* 自定义表格 */
 .dash-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
 .dash-table thead tr {
-    background: #f9fafb;
+    background: var(--background-color);
     border-bottom: 2px solid #e5e7eb;
 }
 .dash-table th {
@@ -172,13 +178,13 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
 }
 .dash-table td {
     padding: 7px 10px;
-    color: #374151;
+    color: var(--text-color);
     border-bottom: 1px solid #f3f4f6;
     white-space: nowrap;
 }
-.dash-table tbody tr:hover { background: #f9fafb; }
+.dash-table tbody tr:hover { background: var(--background-color); }
 .dash-table .rank { color: #9ca3af; font-size: 0.72rem; }
-.dash-table .name { color: #111827; font-weight: 500; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.dash-table .name { color: var(--text-color); font-weight: 500; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .score-bar-wrap { width: 46px; background: #e5e7eb; border-radius: 3px; height: 5px; display: inline-block; vertical-align: middle; margin-right: 5px; }
 .score-bar-fill { height: 5px; border-radius: 3px; background: linear-gradient(90deg, #93c5fd, #2563eb); }
 .score-val { vertical-align: middle; color: #2563eb; font-weight: 600; }
@@ -186,7 +192,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
 
 /* 底部说明 */
 .footer-box {
-    background: #f9fafb;
+    background: var(--background-color);
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     padding: 14px 18px;
@@ -207,7 +213,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
 .footer-item .fi-title {
     font-size: 0.88rem;
     font-weight: 600;
-    color: #374151;
+    color: var(--text-color);
     margin-bottom: 3px;
 }
 .footer-item .fi-weight {
@@ -269,7 +275,7 @@ with st.sidebar:
     st.markdown("### Navigation")
     page = st.radio(
         "Page",
-        options=["Selection Dashboard", "Price Prediction"],
+        options=["Selection Dashboard", "Price Prediction", "🤖 AI Analysis"],
         label_visibility="collapsed",
     )
     st.markdown("---")
@@ -967,3 +973,285 @@ elif page == "Price Prediction":
             ),
         )
         st.plotly_chart(fig, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════
+# PAGE 3 — AI Analysis
+# ══════════════════════════════════════════════════════════════════
+elif page == "🤖 AI Analysis":
+
+    # ── Session state 初始化 ──────────────────────────────────────
+    if "ai_kw_field" not in st.session_state:
+        st.session_state["ai_kw_field"] = ""
+    if "ai_result" not in st.session_state:
+        st.session_state["ai_result"] = None
+    if "ai_history" not in st.session_state:
+        st.session_state["ai_history"] = []
+
+    # ── 侧边栏：品牌快选按钮 ──────────────────────────────────────
+    with st.sidebar:
+        st.markdown("### Quick Select")
+        for kw in df["keyword"].tolist():
+            label = kw if len(kw) <= 26 else kw[:24] + "…"
+            if st.button(label, key=f"qbtn_{kw}", use_container_width=True):
+                st.session_state["ai_kw_field"] = kw
+                st.rerun()
+
+    # ── 页头 ──────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="dash-header">
+      <div class="dash-title">🤖 AI Analysis</div>
+      <div class="dash-meta">DeepSeek · Real-time Grailed data · ~60s per query</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # API key 检查提示
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        st.warning(
+            "⚠️ 未检测到 DEEPSEEK_API_KEY。"
+            "请在终端运行：`export DEEPSEEK_API_KEY='your-key'`，然后重启 Streamlit。"
+        )
+
+    # ── 输入行：文本框 + 按钮 ─────────────────────────────────────
+    col_input, col_btn = st.columns([5, 1])
+    with col_input:
+        keyword_input = st.text_input(
+            "keyword",
+            key="ai_kw_field",
+            placeholder="支持中英文输入，如：巴黎世家、马吉拉、Number Nine AW03",
+            label_visibility="collapsed",
+        )
+    with col_btn:
+        analyze_clicked = st.button("开始分析", type="primary", use_container_width=True)
+
+    # ── 触发分析 ──────────────────────────────────────────────────
+    if analyze_clicked:
+        kw = (keyword_input or "").strip()
+        if not kw:
+            st.error("请输入关键词后再点击分析。")
+        elif not os.environ.get("DEEPSEEK_API_KEY"):
+            st.error("请先设置 DEEPSEEK_API_KEY 环境变量再运行分析。")
+        else:
+            from agent import app as agent_app
+
+            initial_state = {
+                "keyword": kw, "original_keyword": "", "was_translated": False,
+                "retry_count": 0, "keyword_relaxed": False,
+                "market_data": {}, "score_data": {},
+                "price_prediction": {}, "final_report": "", "messages": [],
+            }
+            result = {"keyword": kw}
+
+            try:
+                with st.status("🔄 Agent 正在分析...", expanded=True) as status:
+                    st.write("🌐 **Step 0** — 检测输入语言...")
+
+                    for event in agent_app.stream(initial_state, stream_mode="updates"):
+                        node_name = list(event.keys())[0]
+                        node_output = event[node_name]
+                        result.update(node_output)
+
+                        if node_name == "preprocess":
+                            if node_output.get("was_translated"):
+                                orig = node_output.get("original_keyword", kw)
+                                translated = node_output.get("keyword", "")
+                                st.write(f"✅ Step 0 完成 — 已将 **{orig}** 识别为 **{translated}**")
+                            else:
+                                st.write("✅ Step 0 完成 — 英文输入，直接搜索")
+                            st.write("🔍 **Step 1** — 正在抓取实时市场数据（约60秒）...")
+
+                        elif node_name == "fetch_data":
+                            # 多次重试时每轮都会触发，仅记录数据，不宣布下一步
+                            pass
+
+                        elif node_name == "validator":
+                            md = result.get("market_data", {})
+                            supply = md.get("supply_count", 0)
+                            if node_output.get("keyword_relaxed"):
+                                # 触发了放宽重试
+                                relaxed_kw = node_output.get("keyword", "")
+                                st.write(
+                                    f"🔄 数据不足（{supply} 件），自动放宽为 "
+                                    f"**'{relaxed_kw}'** 重试..."
+                                )
+                            else:
+                                # 数据充足，继续流程
+                                demand = md.get("demand_count_30d", 0)
+                                s_str  = f"{int(supply):,}" if supply else "?"
+                                d_str  = f"{int(demand):,}" if demand else "?"
+                                st.write(
+                                    f"✅ Step 1 完成 — 在售 **{s_str}** 件，"
+                                    f"近30天成交 **{d_str}** 件"
+                                )
+                                st.write("📊 **Step 2** — 计算供需评分...")
+
+                        elif node_name == "score":
+                            sd    = node_output.get("score_data", {})
+                            pp    = node_output.get("price_prediction") or {}
+                            score = sd.get("total_score", "?")
+                            pred_val = pp.get("predicted_price")
+                            pred_str = f"，预测价 **${pred_val:.0f}**" if pred_val is not None else ""
+                            st.write(f"✅ Step 2 完成 — 综合评分 **{score}/10**{pred_str}")
+                            st.write("🤖 **Step 3** — AI 正在生成分析报告...")
+
+                        elif node_name == "analyze":
+                            st.write("✅ Step 3 完成 — 报告生成完毕")
+
+                    status.update(label="✅ 分析完成", state="complete")
+
+                result["keyword"] = kw
+                st.session_state["ai_result"] = result
+                st.session_state["ai_history"] = [{
+                    "keyword":     kw,
+                    "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "report":      result.get("final_report", ""),
+                    "market_data": result.get("market_data", {}),
+                    "score_data":  result.get("score_data",  {}),
+                }] + st.session_state["ai_history"]
+                st.session_state["ai_history"] = st.session_state["ai_history"][:10]
+
+            except Exception as e:
+                st.error(f"分析失败：{e}")
+                st.session_state["ai_result"] = None
+
+    # ── 结果展示 ──────────────────────────────────────────────────
+    if st.session_state.get("ai_result"):
+        result      = st.session_state["ai_result"]
+        market_data = result.get("market_data", {})
+        score_data  = result.get("score_data",  {})
+        price_pred  = result.get("price_prediction", {})
+        report      = result.get("final_report", "")
+
+        st.markdown('<div class="section-title">Analysis Result</div>', unsafe_allow_html=True)
+
+        col_left, col_right = st.columns([1, 1], gap="medium")
+
+        # ── 左栏：原始市场数据 ────────────────────────────────────
+        with col_left:
+            st.markdown("**Market Data**")
+
+            supply   = market_data.get("supply_count")
+            demand   = market_data.get("demand_count_30d")
+            avg_px   = market_data.get("avg_price_usd")
+            min_px   = market_data.get("min_price_usd")
+            max_px   = market_data.get("max_price_usd")
+            avg_fol  = market_data.get("avg_followers")
+            s_ratio  = score_data.get("supply_demand_ratio")
+            total_s  = score_data.get("total_score")
+
+            supply_str = f"{int(supply):,} 件" if supply is not None else "—"
+            demand_str = f"{int(demand):,} 件" if demand is not None else "—"
+            avg_px_str = f"${avg_px:.0f}" if avg_px is not None else "—"
+            range_str  = (f"${min_px:.0f} – ${max_px:.0f}"
+                          if min_px is not None and max_px is not None else "—")
+            fol_str    = f"{avg_fol:.1f}" if avg_fol is not None else "—"
+            ratio_str  = f"{s_ratio:.1f}x" if s_ratio is not None else "—"
+            score_str  = f"{total_s} / 10" if total_s is not None else "—"
+
+            pred_str = "—"
+            if price_pred:
+                pp      = price_pred.get("predicted_price")
+                trend_v = price_pred.get("trend", "")
+                pct_v   = price_pred.get("pct_change", 0)
+                if pp is not None:
+                    pred_str = f"${pp:.0f}  ({trend_v} {pct_v:+.1f}%)"
+
+            st.markdown(f"""
+            <div style="border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;">
+            <table class="dash-table">
+              <tbody>
+                <tr><td style="width:50%; opacity:0.65">全平台在售数</td>
+                    <td style="font-weight:600">{supply_str}</td></tr>
+                <tr><td style="opacity:0.65">近30天成交量</td>
+                    <td style="font-weight:600">{demand_str}</td></tr>
+                <tr><td style="opacity:0.65">当前均价</td>
+                    <td style="font-weight:600">{avg_px_str}</td></tr>
+                <tr><td style="opacity:0.65">价格区间</td>
+                    <td style="font-weight:600">{range_str}</td></tr>
+                <tr><td style="opacity:0.65">供需比</td>
+                    <td style="font-weight:600">{ratio_str}</td></tr>
+                <tr><td style="opacity:0.65">Listing 平均收藏</td>
+                    <td style="font-weight:600">{fol_str}</td></tr>
+                <tr><td style="opacity:0.65">综合评分</td>
+                    <td style="font-weight:600; color:#2563eb">{score_str}</td></tr>
+                <tr><td style="opacity:0.65">价格预测</td>
+                    <td style="font-weight:600">{pred_str}</td></tr>
+              </tbody>
+            </table>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 评分维度明细
+            if score_data.get("score_breakdown"):
+                st.markdown(
+                    '<div class="section-title" style="margin-top:0.8rem;">Score Breakdown</div>',
+                    unsafe_allow_html=True,
+                )
+                for metric, detail in score_data["score_breakdown"].items():
+                    label = metric.replace("_", " ").replace("score", "").strip().title()
+                    st.markdown(
+                        f'<div style="font-size:0.78rem; color:var(--text-color); opacity:0.7; margin-bottom:5px;">'
+                        f'<span style="font-weight:600; color:var(--text-color); opacity:1">{label}</span>: {detail}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+        # ── 右栏：AI 分析报告 ─────────────────────────────────────
+        with col_right:
+            st.markdown("**AI 分析报告**")
+            if report:
+                st.markdown(report)
+            else:
+                st.info("暂无分析报告")
+
+    # ── 历史记录 ──────────────────────────────────────────────────
+    history = st.session_state.get("ai_history", [])
+    if history:
+        st.markdown("---")
+        hist_hdr, clear_col = st.columns([6, 1])
+        with hist_hdr:
+            st.markdown(
+                '<div class="section-title">Recent Analysis History</div>',
+                unsafe_allow_html=True,
+            )
+        with clear_col:
+            if st.button("清空历史", key="clear_ai_history"):
+                st.session_state["ai_history"] = []
+                st.session_state["ai_result"]  = None
+                st.rerun()
+
+        for entry in history[:3]:
+            kw_e   = entry["keyword"]
+            ts_e   = entry["timestamp"]
+            rpt_e  = entry.get("report", "")
+            md_e   = entry.get("market_data", {})
+            sd_e   = entry.get("score_data",  {})
+
+            # 取报告第一段非空文字作预览
+            preview = next(
+                (ln.strip().lstrip("#*- ") for ln in rpt_e.split("\n") if ln.strip()),
+                "",
+            )
+            if len(preview) > 110:
+                preview = preview[:108] + "…"
+
+            sup_e   = md_e.get("supply_count")
+            dem_e   = md_e.get("demand_count_30d")
+            scr_e   = sd_e.get("total_score")
+            sup_str = f"{int(sup_e):,}" if sup_e is not None else "—"
+            dem_str = f"{int(dem_e):,}" if dem_e is not None else "—"
+            scr_str = str(scr_e) if scr_e is not None else "—"
+
+            st.markdown(f"""
+            <div style="border:1px solid #e5e7eb; border-radius:8px; padding:12px 16px;
+                        margin-bottom:8px; background:var(--background-color);">
+              <div style="display:flex; justify-content:space-between;
+                          align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:4px;">
+                <span style="font-weight:700; color:var(--text-color); font-size:0.88rem;">{kw_e}</span>
+                <span style="font-size:0.72rem; color:#9ca3af; white-space:nowrap;">
+                  {ts_e} &nbsp;·&nbsp; 在售 {sup_str} &nbsp;·&nbsp;
+                  成交 {dem_str} &nbsp;·&nbsp; 评分 {scr_str}/10
+                </span>
+              </div>
+              <div style="font-size:0.80rem; color:var(--text-color); opacity:0.65; line-height:1.5;">{preview}</div>
+            </div>
+            """, unsafe_allow_html=True)

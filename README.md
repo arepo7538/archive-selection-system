@@ -31,6 +31,14 @@ discovery.py   ───>  (listings/sold/      (weighted scoring    scraper.py 
 | **`dashboard.py`** | Streamlit web app with two pages: **Selection Dashboard** (ranking, radar chart, scatter plot) and **Price Prediction** (forecasts, trend charts, model comparison). |
 | **`run_weekly.py`** | Orchestrates the weekly pipeline: scrape → score → output. |
 
+## AI Analysis
+
+- **LangGraph多Agent工作流**：preprocess → fetch_data → validator → score → analyze
+- **支持任意关键词实时分析**（不限于固定列表）
+- **中文输入自动翻译**（巴黎世家 → Balenciaga）
+- **关键词自动放宽**：数据不足时自动退一级重试
+- **流式进度展示**：每个Agent节点实时反馈
+
 ## Tech Stack
 
 - **Python 3.10+**

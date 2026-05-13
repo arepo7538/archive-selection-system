@@ -10,24 +10,26 @@ import time
 from datetime import datetime, timedelta
 
 KEYWORDS = [
-    "Raf Simons consumed cargo pants",
-    "Raf Simons consumed wide pants",
-    "Raf Simons consumed tee",
-    "Raf Simons FW02 knit sweater",
-    "Helmut Lang bondage pants",
-    "Helmut Lang FW00 sherpa",
-    "Helmut Lang SS99",
-    "Prada bowling shirt",
-    "Vetements oversized hoodie",
-    "Vetements DHL tee",
+    # Raf Simons — 品牌+系列层级（consumed 系列合并为 pants，FW02 去掉单品词）
+    "Raf Simons consumed pants",    # 原 cargo/wide pants (9/0) → 合并放宽至 consumed pants (20)
+    "Raf Simons consumed tee",      # 14，略低但可接受
+    "Raf Simons FW02",              # 原 FW02 knit sweater (6) → 放宽至系列级 (109)
+    # Helmut Lang
+    "Helmut Lang bondage pants",    # 96 ✅
+    "Helmut Lang FW00",             # 原 FW00 sherpa (1) → 放宽至系列级 (27)
+    "Helmut Lang SS99",             # 128 ✅
+    # Prada / Vetements
+    "Prada bowling shirt",          # 159 ✅
+    "Vetements oversized hoodie",   # 260，略高但单品词已够精确
+    "Vetements DHL tee",            # 31 ✅
     # Hysteric Glamour
-    "Hysteric Glamour snake jeans",
-    "Hysteric Glamour varsity jacket",
-    "Hysteric Glamour graphic tee",
-    # Number (N)ine
-    "Number Nine destroyed tee",
-    "Number Nine AW03",
-    "Number Nine AW09",
+    "Hysteric Glamour snake jeans", # 71 ✅
+    "Hysteric Glamour varsity jacket",  # 343，品牌+款式层级
+    # "Hysteric Glamour graphic tee",  # 2850 — 过于泛化，暂时移除
+    # Number (N)ine — 系列级，供需比分析用
+    "Number Nine destroyed tee",    # 137 ✅
+    "Number Nine AW03",             # 692，系列级，intentional
+    "Number Nine AW09",             # 685，系列级，intentional
 ]
 
 ALGOLIA_URL    = "https://mnrwefss2q-dsn.algolia.net/1/indexes/*/queries"
