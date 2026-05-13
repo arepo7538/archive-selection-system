@@ -64,8 +64,12 @@ def fetch_market_data(keyword: str) -> dict:
     """
     print(f"[Tool 1] Fetching market data for: '{keyword}' …")
 
-    listings, nb_supply = fetch_grailed_listings(keyword)
-    sold,     nb_demand = fetch_grailed_sold_30d(keyword)
+    try:
+        listings, nb_supply = fetch_grailed_listings(keyword)
+        sold,     nb_demand = fetch_grailed_sold_30d(keyword)
+    except Exception as e:
+        print(f"[Tool 1] API error: {e}")
+        return {"error": str(e), "keyword": keyword, "supply_count": 0, "demand_count_30d": 0}
 
     prices      = [x["price_usd"]  for x in listings if x.get("price_usd")]
     sold_prices = [x["sold_price"] for x in sold     if x.get("sold_price")]

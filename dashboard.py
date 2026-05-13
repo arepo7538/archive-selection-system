@@ -1049,6 +1049,8 @@ elif page == "🤖 AI Analysis":
                     for event in agent_app.stream(initial_state, stream_mode="updates"):
                         node_name = list(event.keys())[0]
                         node_output = event[node_name]
+                        if node_output is None:
+                            continue
                         result.update(node_output)
 
                         if node_name == "preprocess":
@@ -1123,6 +1125,9 @@ elif page == "🤖 AI Analysis":
         report      = result.get("final_report", "")
 
         st.markdown('<div class="section-title">Analysis Result</div>', unsafe_allow_html=True)
+
+        if market_data.get("error"):
+            st.error(f"数据抓取失败：{market_data['error']}")
 
         col_left, col_right = st.columns([1, 1], gap="medium")
 
