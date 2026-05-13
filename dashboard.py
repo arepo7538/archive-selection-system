@@ -1435,79 +1435,56 @@ elif page == "AI Analysis":
                         unsafe_allow_html=True,
                     )
 
-        # ── Right column: Brand Background → AI report ───────────
+        # ── Right column: AI Analysis Report ─────────────────────
         with col_right:
-            with st.expander("Brand Background"):
-                try:
-                    cache_key = f"brand_bio_{display_kw}"
-                    if cache_key not in st.session_state:
-                        from openai import OpenAI as _OAI
-                        _client = _OAI(
-                            api_key=os.environ.get("DEEPSEEK_API_KEY"),
-                            base_url="https://api.deepseek.com",
-                        )
-                        with st.spinner("Loading brand history..."):
-                            _resp = _client.chat.completions.create(
-                                model="deepseek-chat",
-                                messages=[
-                                    {"role": "system", "content": (
-                                        "You are an archive fashion historian. "
-                                        "Write a concise 150-word brand background covering: "
-                                        "1. Founded year and designer "
-                                        "2. Most iconic era/collection "
-                                        "3. Why it matters in archive resale market today. "
-                                        "Write in English, professional but accessible tone."
-                                    )},
-                                    {"role": "user", "content": f"Brand/item: {display_kw}"},
-                                ],
-                                max_tokens=300,
-                            )
-                        st.session_state[cache_key] = _resp.choices[0].message.content
-                    st.markdown(st.session_state[cache_key])
-                except Exception as _e:
-                    st.info(f"Brand background unavailable: {_e}")
-
             st.markdown("**AI Analysis Report**")
             if report:
                 st.markdown(f'<div class="ai-report">{report}</div>', unsafe_allow_html=True)
             else:
                 st.info("No report yet")
 
-    # ── Module 2: Market Heat Trend ───────────────────────────────
-    st.markdown("### MARKET HEAT TREND")
-    try:
-        import plotly.graph_objects as _go
-        _fig = _go.Figure()
+        # ── 4. Brand Background — full width, expanded ────────────
+        with st.expander("Brand Background", expanded=True):
+            try:
+                cache_key = f"brand_bio_{display_kw}"
+                if cache_key not in st.session_state:
+                    from openai import OpenAI as _OAI
+                    _client = _OAI(
+                        api_key=os.environ.get("DEEPSEEK_API_KEY"),
+                        base_url="https://api.deepseek.com",
+                    )
+                    with st.spinner("Loading brand history..."):
+                        _resp = _client.chat.completions.create(
+                            model="deepseek-chat",
+                            messages=[
+                                {"role": "system", "content": (
+                                    "You are an archive fashion historian. "
+                                    "Write a concise 150-word brand background covering: "
+                                    "1. Founded year and designer "
+                                    "2. Most iconic era/collection "
+                                    "3. Why it matters in archive resale market today. "
+                                    "Write in English, professional but accessible tone."
+                                )},
+                                {"role": "user", "content": f"Brand/item: {display_kw}"},
+                            ],
+                            max_tokens=300,
+                        )
+                    st.session_state[cache_key] = _resp.choices[0].message.content
+                st.markdown(st.session_state[cache_key])
+            except Exception as _e:
+                st.info(f"Brand background unavailable: {_e}")
 
-        # Data source 1: Google Trends (with debug output)
-        try:
-            from social_signals import fetch_google_trends
-            _brand_name = (
-                " ".join(display_kw.split()[:2])
-                if len(display_kw.split()) > 1
-                else display_kw
-            )
-            _trends_data = fetch_google_trends(_brand_name)
-            st.write(
-                "debug:",
-                type(_trends_data),
-                _trends_data.columns.tolist() if hasattr(_trends_data, "columns") else _trends_data,
-            )
-            if _trends_data is not None and len(_trends_data) > 0:
-                _weeks  = list(range(len(_trends_data)))
-                _values = _trends_data.iloc[:, 0].tolist()
-                _fig.add_trace(_go.Scatter(
-                    x=_weeks,
-                    y=_values,
-                    name="Search Interest",
-                    line=dict(color="#374151", width=2),
-                    fill="tozeroy",
-                    fillcolor="rgba(55,65,81,0.08)",
-                ))
-        except Exception as _te:
-            st.write("trends error:", str(_te))
+        # ── 5. Market Heat Trend — full width ────────────────────
+        st.markdown("### MARKET HEAT TREND")
 
-        # Data source 2: Grailed historical_sold.csv
+        _brand_name = (
+            " ".join(display_kw.split()[:2])
+            if len(display_kw.split()) > 1
+            else display_kw
+        )
+
+        # Source 1: Grailed historical monthly sales (time-series)
+        _hist_plotted = False
         try:
             _hist_path = os.path.join(BASE_DIR, "historical_sold.csv")
             if os.path.exists(_hist_path):
@@ -1522,42 +1499,68 @@ elif page == "AI Analysis":
                     )
                     _monthly.columns = ["month", "sales"]
                     _monthly["month_str"] = _monthly["month"].astype(str)
-                    _fig.add_trace(_go.Scatter(
+                    _fig_hist = go.Figure()
+                    _fig_hist.add_trace(go.Scatter(
                         x=_monthly["month_str"],
                         y=_monthly["sales"],
                         name="Monthly Sales (Grailed)",
-                        line=dict(color="#9ca3af", width=1.5, dash="dot"),
-                        yaxis="y2",
+                        mode="lines+markers",
+                        line=dict(color="#374151", width=2),
+                        fill="tozeroy",
+                        fillcolor="rgba(55,65,81,0.08)",
                     ))
+                    _fig_hist.update_layout(
+                        height=240,
+                        margin=dict(l=0, r=0, t=10, b=0),
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(family="DM Sans", size=11, color="#374151"),
+                        xaxis=dict(showgrid=True, gridcolor="#f3f4f6"),
+                        yaxis=dict(showgrid=True, gridcolor="#f3f4f6", title="Monthly Sales"),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                        hovermode="x unified",
+                    )
+                    st.plotly_chart(_fig_hist, use_container_width=True)
+                    _hist_plotted = True
         except Exception:
             pass
 
-        _fig.update_layout(
-            height=280,
-            margin=dict(l=0, r=0, t=30, b=0),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="DM Sans", size=12, color="#374151"),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            xaxis=dict(showgrid=True, gridcolor="#f3f4f6", title="Week (last 12 months)"),
-            yaxis=dict(showgrid=True, gridcolor="#f3f4f6", title="Search Interest"),
-            yaxis2=dict(overlaying="y", side="right", title="Monthly Sales", showgrid=False),
-            hovermode="x unified",
-        )
+        # Source 2: Google Trends aggregated metrics (pass list, not string)
+        try:
+            from social_signals import fetch_google_trends
+            _trends_df = fetch_google_trends([_brand_name])
+            if _trends_df is not None and not _trends_df.empty:
+                _row          = _trends_df.iloc[0]
+                _recent_4w    = float(_row.get("trends_recent_4w", 0))
+                _historical   = float(_row.get("trends_historical", 0))
+                _trends_ratio = float(_row.get("trends_ratio", 1.0))
+                _fig_gt = go.Figure(go.Bar(
+                    x=["4-Week Avg", "3-Month Baseline"],
+                    y=[_recent_4w, _historical],
+                    marker_color=["#374151", "#d1d5db"],
+                    width=0.35,
+                ))
+                _fig_gt.update_layout(
+                    height=200,
+                    margin=dict(l=0, r=0, t=10, b=0),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="DM Sans", size=11, color="#374151"),
+                    xaxis=dict(showgrid=False),
+                    yaxis=dict(showgrid=True, gridcolor="#f3f4f6", title="Interest (0-100)"),
+                    showlegend=False,
+                )
+                st.plotly_chart(_fig_gt, use_container_width=True)
+                st.caption(
+                    f"Google Trends — recent 4-week avg is {_trends_ratio:.2f}x the 3-month baseline"
+                )
+        except Exception as _te:
+            st.caption(f"Google Trends unavailable: {_te}")
 
-        if len(_fig.data) > 0:
-            st.plotly_chart(_fig, use_container_width=True)
-            st.caption(
-                "Search Interest: Google Trends (normalized 0–100)  ·  "
-                "Monthly Sales: Grailed historical data"
-            )
-        else:
+        if not _hist_plotted:
             st.info("Trend data unavailable for this keyword.")
 
-    except Exception as _e:
-        st.info(f"Trend chart unavailable: {_e}")
-
-    # ── 历史记录 ──────────────────────────────────────────────────
+    # ── 6. Analysis History — always visible ─────────────────────
     history = st.session_state.get("ai_history", [])
     if history:
         st.markdown("---")
