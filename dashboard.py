@@ -20,126 +20,163 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── 暗黑编辑风主题 CSS ────────────────────────────────────────────────
+# ── 暖白极简主题 CSS ──────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-}
-
-h1, h2, h3 {
-    font-family: 'Space Mono', monospace !important;
-    letter-spacing: -0.02em;
+html, body, [class*="css"], .stApp {
+    font-family: 'Inter', sans-serif !important;
+    background-color: #f9f7f4 !important;
+    color: #1a1a1a !important;
 }
 
 [data-testid="stSidebar"] {
-    background: #0a0a0a !important;
-    border-right: 1px solid #222;
+    background-color: #f0ede8 !important;
+    border-right: 1px solid #e5e0d8 !important;
 }
 
 [data-testid="stSidebar"] * {
-    color: #e0e0e0 !important;
+    color: #1a1a1a !important;
 }
 
 [data-testid="stSidebar"] .stButton button {
-    background: transparent !important;
-    border: 1px solid #333 !important;
-    color: #999 !important;
-    font-family: 'Space Mono', monospace !important;
-    font-size: 11px !important;
-    letter-spacing: 0.05em !important;
-    text-transform: uppercase !important;
-    border-radius: 0 !important;
-    transition: all 0.2s !important;
+    background: #ffffff !important;
+    border: 1px solid #e5e0d8 !important;
+    color: #374151 !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    transition: all 0.15s !important;
+    text-align: left !important;
 }
 
 [data-testid="stSidebar"] .stButton button:hover {
-    border-color: #fff !important;
-    color: #fff !important;
-    background: #111 !important;
+    background: #ffffff !important;
+    border-color: #9ca3af !important;
+    color: #111 !important;
 }
 
 .main .block-container {
-    background: #0d0d0d;
-    padding-top: 2rem;
-}
-
-.stButton > button[kind="primary"] {
-    background: #fff !important;
-    color: #000 !important;
-    border: none !important;
-    border-radius: 0 !important;
-    font-family: 'Space Mono', monospace !important;
-    font-size: 12px !important;
-    letter-spacing: 0.1em !important;
-    text-transform: uppercase !important;
-    font-weight: 700 !important;
-    padding: 0.6rem 2rem !important;
-    transition: all 0.2s !important;
-}
-
-.stButton > button[kind="primary"]:hover {
-    background: #e0e0e0 !important;
-}
-
-.stTextInput input {
-    background: #111 !important;
-    border: 1px solid #333 !important;
-    border-radius: 0 !important;
-    color: #fff !important;
-    font-family: 'DM Sans', sans-serif !important;
-}
-
-.stTextInput input:focus {
-    border-color: #fff !important;
-    box-shadow: none !important;
-}
-
-.stDataFrame {
-    border: 1px solid #222 !important;
+    background-color: #f9f7f4 !important;
+    max-width: 1100px !important;
+    padding: 2rem 2.5rem !important;
 }
 
 [data-testid="metric-container"] {
-    background: #111 !important;
-    border: 1px solid #222 !important;
-    border-radius: 0 !important;
-    padding: 1rem !important;
+    background: #ffffff !important;
+    border: 1px solid #e5e0d8 !important;
+    border-radius: 12px !important;
+    padding: 1.2rem !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+}
+
+[data-testid="metric-container"] label {
+    color: #6b7280 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.05em !important;
+    text-transform: uppercase !important;
+}
+
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: #111827 !important;
+    font-size: 28px !important;
+    font-weight: 600 !important;
+}
+
+h1 {
+    font-size: 22px !important;
+    font-weight: 600 !important;
+    color: #111827 !important;
+    letter-spacing: -0.01em !important;
+}
+
+h2, h3 {
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    color: #6b7280 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+}
+
+.stButton > button {
+    background: #1a1a1a !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    padding: 0.5rem 1.5rem !important;
+    transition: all 0.15s !important;
+}
+
+.stButton > button:hover {
+    background: #374151 !important;
+}
+
+.stTextInput input {
+    background: #ffffff !important;
+    border: 1px solid #e5e0d8 !important;
+    border-radius: 8px !important;
+    color: #1a1a1a !important;
+    font-size: 14px !important;
+    padding: 0.6rem 1rem !important;
+}
+
+.stTextInput input:focus {
+    border-color: #9ca3af !important;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.05) !important;
+}
+
+[data-testid="stDataFrame"] {
+    border: 1px solid #e5e0d8 !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
 }
 
 hr {
-    border-color: #222 !important;
+    border-color: #e5e0d8 !important;
+    margin: 1.5rem 0 !important;
 }
 
 [data-testid="stStatus"] {
-    background: #111 !important;
-    border: 1px solid #333 !important;
-    border-radius: 0 !important;
-    font-family: 'Space Mono', monospace !important;
-    font-size: 12px !important;
+    background: #ffffff !important;
+    border: 1px solid #e5e0d8 !important;
+    border-radius: 12px !important;
+    font-size: 13px !important;
 }
 
 .ai-report {
-    background: #111;
-    border-left: 2px solid #fff;
-    padding: 1.5rem;
-    margin-top: 1rem;
-    font-family: 'DM Sans', sans-serif;
+    background: #ffffff;
+    border: 1px solid #e5e0d8;
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
     font-size: 14px;
     line-height: 1.8;
-    color: #e0e0e0;
+    color: #374151;
 }
 
 .page-header {
-    font-family: 'Space Mono', monospace;
     font-size: 11px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: #666;
+    color: #9ca3af;
     margin-bottom: 2rem;
-    border-bottom: 1px solid #222;
+    border-bottom: 1px solid #e5e0d8;
     padding-bottom: 1rem;
+}
+
+div[data-testid="stVerticalBlock"] > div {
+    border-radius: 12px !important;
+}
+
+.stSlider > div > div {
+    background: #e5e0d8 !important;
+}
+
+.stProgress > div > div {
+    background: #1a1a1a !important;
 }
 </style>
 """, unsafe_allow_html=True)
