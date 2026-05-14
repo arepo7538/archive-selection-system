@@ -1253,6 +1253,11 @@ elif page == "AI Analysis":
     with col_btn:
         analyze_clicked = st.button("Analyze", type="primary", use_container_width=True)
 
+    st.caption(
+        "Best results with archive designer brands: "
+        "Helmut Lang · Raf Simons · Number Nine · Maison Margiela · Yohji Yamamoto"
+    )
+
     # ── 触发分析 ──────────────────────────────────────────────────
     if analyze_clicked:
         kw = (keyword_input or "").strip()
