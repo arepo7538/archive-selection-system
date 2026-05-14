@@ -1492,7 +1492,7 @@ elif page == "AI Analysis":
         # ── 5. Market Heat Trend — full width ────────────────────
         st.markdown("### MARKET HEAT TREND")
 
-        # Grailed historical monthly sales (time-series)
+        # ── Grailed historical monthly sales (time-series) ───────
         _hist_plotted = False
         try:
             _hist_path = os.path.join(BASE_DIR, "historical_sold.csv")
@@ -1540,6 +1540,92 @@ elif page == "AI Analysis":
                 "No historical sales data available. "
                 "Run `python historical_scraper.py` to collect data."
             )
+
+        # ── Google Trends — async fetch, non-blocking ─────────────
+        import threading
+        import random
+
+        def _get_trends(brand_name, result_container):
+            try:
+                from social_signals import fetch_google_trends
+                import time as _time
+                _time.sleep(random.uniform(2, 5))  # random delay to avoid 429
+                data = fetch_google_trends([brand_name])
+                result_container["data"] = data
+                result_container["error"] = None
+            except Exception as _e:
+                result_container["data"] = None
+                result_container["error"] = str(_e)
+
+        _trend_result = {}
+        _brand_name = (
+            " ".join(display_kw.split()[:2])
+            if len(display_kw.split()) > 1
+            else display_kw
+        )
+
+        _trend_placeholder = st.empty()
+
+        with _trend_placeholder.container():
+            st.info("Loading Google Trends data...")
+
+        _t = threading.Thread(
+            target=_get_trends,
+            args=(_brand_name, _trend_result),
+        )
+        _t.start()
+        _t.join(timeout=15)  # wait at most 15 seconds
+
+        with _trend_placeholder.container():
+            if _trend_result.get("data") is not None:
+                _df_gt = _trend_result["data"]
+                if not _df_gt.empty:
+                    _row          = _df_gt.iloc[0]
+                    _recent_4w    = float(_row.get("trends_recent_4w", 0))
+                    _historical   = float(_row.get("trends_historical", 0))
+                    _ratio        = float(_row.get("trends_ratio", 1.0))
+
+                    _fig_gt = go.Figure(go.Bar(
+                        x=["Recent 4-Week Avg", "3-Month Baseline"],
+                        y=[_recent_4w, _historical],
+                        marker_color=["#374151", "#d1d5db"],
+                        width=0.4,
+                    ))
+                    _fig_gt.update_layout(
+                        height=220,
+                        margin=dict(l=0, r=0, t=10, b=0),
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(family="DM Sans", size=11, color="#374151"),
+                        xaxis=dict(showgrid=False),
+                        yaxis=dict(
+                            showgrid=True,
+                            gridcolor="#f3f4f6",
+                            title="Search Interest (0-100)",
+                        ),
+                        showlegend=False,
+                    )
+                    st.plotly_chart(_fig_gt, use_container_width=True)
+
+                    if _ratio >= 1.3:
+                        _trend_msg = f"Search interest is {_ratio:.1f}x above baseline — rising momentum"
+                    elif _ratio >= 1.1:
+                        _trend_msg = f"Search interest is {_ratio:.1f}x above baseline — slight uptick"
+                    elif _ratio <= 0.8:
+                        _trend_msg = f"Search interest is {_ratio:.1f}x of baseline — cooling down"
+                    else:
+                        _trend_msg = f"Search interest is stable ({_ratio:.1f}x baseline)"
+
+                    st.caption(f"Google Trends — {_trend_msg}")
+                else:
+                    st.caption("Google Trends: no data returned for this keyword")
+            elif _trend_result.get("error"):
+                st.caption(
+                    "Google Trends data temporarily unavailable "
+                    "(rate limited). Try again in a few minutes."
+                )
+            else:
+                st.caption("Google Trends: request timed out")
 
     # ── 6. Analysis History — always visible ─────────────────────
     history = st.session_state.get("ai_history", [])

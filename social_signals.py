@@ -8,6 +8,7 @@
 
 import pandas as pd
 import time
+import random
 import requests
 from datetime import datetime
 from typing import Optional
@@ -43,31 +44,43 @@ def fetch_google_trends(keywords: list[str], timeframe: str = "today 3-m") -> pd
     # Google Trends 每次最多5个关键词
     for i in range(0, len(keywords), 5):
         batch = keywords[i:i+5]
-        try:
-            pytrends.build_payload(batch, timeframe=timeframe, geo="")
-            df = pytrends.interest_over_time()
-            if df.empty:
-                continue
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                pytrends.build_payload(batch, timeframe=timeframe, geo="")
+                df = pytrends.interest_over_time()
+                if df.empty:
+                    break
 
-            for kw in batch:
-                if kw not in df.columns:
-                    continue
-                series = df[kw]
-                # 近4周均值 vs 历史均值
-                recent_4w  = series.tail(4).mean()
-                historical = series.mean()
-                ratio      = round(recent_4w / historical, 3) if historical > 0 else 1.0
+                for kw in batch:
+                    if kw not in df.columns:
+                        continue
+                    series = df[kw]
+                    # 近4周均值 vs 历史均值
+                    recent_4w  = series.tail(4).mean()
+                    historical = series.mean()
+                    ratio      = round(recent_4w / historical, 3) if historical > 0 else 1.0
 
-                results.append({
-                    "keyword":          kw,
-                    "trends_recent_4w": round(recent_4w, 2),
-                    "trends_historical": round(historical, 2),
-                    "trends_ratio":     ratio,   # >1 说明近期热度高于历史均值
-                    "fetch_date":       datetime.today().strftime("%Y-%m-%d"),
-                })
-            time.sleep(2)  # 避免 429
-        except Exception as e:
-            print(f"[Google Trends] batch={batch} 报错: {e}")
+                    results.append({
+                        "keyword":           kw,
+                        "trends_recent_4w":  round(recent_4w, 2),
+                        "trends_historical": round(historical, 2),
+                        "trends_ratio":      ratio,   # >1 说明近期热度高于历史均值
+                        "fetch_date":        datetime.today().strftime("%Y-%m-%d"),
+                    })
+                time.sleep(2)  # 避免 429
+                break  # success — exit retry loop
+            except Exception as e:
+                err_str = str(e)
+                is_429 = "429" in err_str or "Too Many Requests" in err_str
+                if is_429 and attempt < max_retries:
+                    wait = random.uniform(5, 10)
+                    print(f"[Google Trends] 429 rate limit, retrying in {wait:.1f}s "
+                          f"(attempt {attempt + 1}/{max_retries})…")
+                    time.sleep(wait)
+                else:
+                    print(f"[Google Trends] batch={batch} 报错: {e}")
+                    break
 
     df_out = pd.DataFrame(results)
     print(f"[Google Trends] 采集完成，共 {len(df_out)} 条")
