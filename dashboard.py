@@ -253,6 +253,12 @@ st.markdown("""
 }
 div[data-testid="stVerticalBlock"] > div { gap: 0.35rem; }
 
+/* 确保brand background和上方两栏不重叠 */
+[data-testid="stVerticalBlock"] {
+    position: relative !important;
+    z-index: auto !important;
+}
+
 /* 主题适配工具类 */
 .metric-value { color: var(--text-color); }
 .report-text  { color: var(--text-color); }
@@ -1443,8 +1449,12 @@ elif page == "AI Analysis":
             else:
                 st.info("No report yet")
 
-        # ── 4. Brand Background — full width, expanded ────────────
-        with st.expander("Brand Background", expanded=True):
+        # ── 4. Brand Background — full width ─────────────────────
+        st.markdown("---")
+        st.markdown("**BRAND BACKGROUND**")
+        st.markdown("---")
+        container = st.container()
+        with container:
             try:
                 cache_key = f"brand_bio_{display_kw}"
                 if cache_key not in st.session_state:
