@@ -1274,6 +1274,7 @@ elif page == "AI Analysis":
                 "market_data": {}, "score_data": {},
                 "price_prediction": {}, "celebrity_data": {},
                 "final_report": "", "messages": [],
+                "rejection_reason": None, "suggestions": [],
             }
             result = {"keyword": kw}
 
@@ -1295,6 +1296,23 @@ elif page == "AI Analysis":
                                 st.write(f"Step 0 done — Translated **{orig}** → **{translated}**")
                             else:
                                 st.write("Step 0 done — English input, searching directly")
+                            st.write("**Step 0.5** — Verifying archive brand...")
+
+                        elif node_name == "brand_validator":
+                            rejection = node_output.get("rejection_reason")
+                            if rejection:
+                                suggestions = node_output.get("suggestions", [])
+                                sugg_str = (
+                                    " · ".join(suggestions)
+                                    if suggestions
+                                    else "Helmut Lang · Raf Simons · Number Nine"
+                                )
+                                st.warning(
+                                    f"**Not an archive brand:** {rejection}\n\n"
+                                    f"Try these instead: {sugg_str}"
+                                )
+                            else:
+                                st.write("Step 0.5 done — Archive brand verified")
                             st.write("**Step 1** — Fetching live market data (~60s)...")
 
                         elif node_name == "fetch_data":
@@ -1368,6 +1386,11 @@ elif page == "AI Analysis":
         score_data  = result.get("score_data",  {})
         price_pred  = result.get("price_prediction", {})
         report      = result.get("final_report", "")
+
+        # Rejected by brand_validator — warning already shown in stream, skip results
+        if report.startswith("NOT_ARCHIVE:"):
+            st.session_state["ai_result"] = None
+            st.stop()
 
         st.markdown('<div class="section-title">Analysis Result</div>', unsafe_allow_html=True)
 

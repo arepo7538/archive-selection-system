@@ -49,6 +49,8 @@ class MarketAnalysisState(TypedDict):
     celebrity_data: dict          # 明星催化剂信号
     final_report: str
     messages: list
+    rejection_reason: Optional[str]   # brand_validator: None = passed, str = rejected
+    suggestions: list                  # archive brand alternatives when rejected
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -292,7 +294,88 @@ def get_price_prediction(keyword: str) -> Optional[dict]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Node 0 — preprocessor_node
+# Node 0a — brand_validator_node
+# ══════════════════════════════════════════════════════════════════════════════
+
+_VALIDATOR_SYSTEM = """You are an archive fashion expert.
+Determine if the input belongs to archive/designer fashion suitable for
+second-hand market analysis.
+
+Archive fashion includes: Japanese designers (Number Nine, Hysteric Glamour,
+Undercover, Neighborhood), European avant-garde (Helmut Lang, Raf Simons,
+Maison Margiela, Carol Christian Poell, Rick Owens, Ann Demeulemeester,
+Yohji Yamamoto, Comme des Garcons), and niche luxury resale brands.
+
+NOT archive fashion: mass market (Zara, H&M, Uniqlo, Muji),
+mainstream sportswear (Adidas, Nike, New Balance basic lines),
+fast fashion, or household/non-fashion items.
+
+Respond ONLY with valid JSON (no markdown, no code block):
+{
+  "is_archive": true/false,
+  "confidence": "high/medium/low",
+  "reason": "one sentence explanation",
+  "suggestions": ["alternative1", "alternative2", "alternative3"]
+}
+Populate suggestions only when is_archive is false, with 3 related archive brands."""
+
+
+def brand_validator_node(state: MarketAnalysisState) -> dict:
+    """
+    Use DeepSeek to determine if the keyword is archive/designer fashion.
+    Pass → return {"rejection_reason": None}
+    Fail → return rejection_reason + suggestions + final_report sentinel
+    On any error → pass through (never block the pipeline).
+    """
+    keyword = state.get("keyword", "")
+    api_key = os.environ.get("DEEPSEEK_API_KEY")
+
+    print(f"[Node 0a] Validating brand: '{keyword}' …")
+
+    if not api_key:
+        return {"rejection_reason": None}
+
+    try:
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        resp = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": _VALIDATOR_SYSTEM},
+                {"role": "user",   "content": f"Brand/keyword: {keyword}"},
+            ],
+            max_tokens=200,
+            temperature=0.1,
+        )
+        content = resp.choices[0].message.content.strip()
+        # strip optional markdown fences
+        content = content.replace("```json", "").replace("```", "").strip()
+        result  = json.loads(content)
+
+        if not result.get("is_archive", True):
+            reason      = result.get("reason", "")
+            suggestions = result.get("suggestions", [])
+            print(f"[Node 0a] Rejected: {reason}")
+            return {
+                "rejection_reason": reason,
+                "suggestions":      suggestions,
+                "final_report":     f"NOT_ARCHIVE:{reason}",
+            }
+
+        print(f"[Node 0a] Passed (confidence={result.get('confidence', '?')})")
+        return {"rejection_reason": None}
+
+    except Exception as e:
+        print(f"[Node 0a] Validation error ({e}), passing through.")
+        return {"rejection_reason": None}
+
+
+def should_proceed(state: MarketAnalysisState) -> str:
+    """Route after brand_validator: rejected → END, else → fetch_data."""
+    return "rejected" if state.get("rejection_reason") else "proceed"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Node 0b — preprocessor_node
 # ══════════════════════════════════════════════════════════════════════════════
 
 _TRANSLATE_SYSTEM = (
@@ -573,6 +656,7 @@ def _route_after_score(state: MarketAnalysisState) -> str:
 
 workflow = StateGraph(MarketAnalysisState)
 workflow.add_node("preprocess",       preprocessor_node)
+workflow.add_node("brand_validator",  brand_validator_node)
 workflow.add_node("fetch_data",       data_fetcher_node)
 workflow.add_node("validator",        validator_node)
 workflow.add_node("celebrity_signal", celebrity_signal_node)
@@ -580,7 +664,11 @@ workflow.add_node("score",            scorer_node)
 workflow.add_node("analyze",          analyst_node)
 
 workflow.set_entry_point("preprocess")
-workflow.add_edge("preprocess", "fetch_data")
+workflow.add_edge("preprocess", "brand_validator")
+workflow.add_conditional_edges("brand_validator", should_proceed, {
+    "rejected": END,          # not archive → stop immediately
+    "proceed":  "fetch_data", # archive confirmed → continue pipeline
+})
 workflow.add_edge("fetch_data", "validator")                 # 每次抓取后都经过验证
 workflow.add_conditional_edges("validator", should_retry, {
     "retry":    "fetch_data",                                # 放宽后循环回去重抓
@@ -591,7 +679,7 @@ workflow.add_conditional_edges("score", _route_after_score, {
     "analyze": "analyze",
     "skip":    END,
 })
-workflow.add_edge("analyze",    END)
+workflow.add_edge("analyze", END)
 
 app = workflow.compile()
 
@@ -624,6 +712,8 @@ def analyze_item_full(keyword: str) -> dict:
         "celebrity_data":   {},
         "final_report":     "",
         "messages":         [],
+        "rejection_reason": None,
+        "suggestions":      [],
     })
 
 
