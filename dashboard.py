@@ -1293,10 +1293,8 @@ elif page == "AI Analysis":
                             if node_output.get("was_translated"):
                                 orig = node_output.get("original_keyword", kw)
                                 translated = node_output.get("keyword", "")
-                                st.write(f"Step 0 done — Translated **{orig}** → **{translated}**")
-                            else:
-                                st.write("Step 0 done — English input, searching directly")
-                            st.write("**Step 0.5** — Verifying archive brand...")
+                                st.write(f"Translated: {orig} → {translated}")
+                            # English input: silent, no message
 
                         elif node_name == "brand_validator":
                             rejection = node_output.get("rejection_reason")
@@ -1311,6 +1309,8 @@ elif page == "AI Analysis":
                                     f"**Not an archive brand:** {rejection}\n\n"
                                     f"Try these instead: {sugg_str}"
                                 )
+                                status.update(label="Analysis stopped", state="error")
+                                break  # terminate stream loop immediately
                             else:
                                 st.write("Step 0.5 done — Archive brand verified")
                             st.write("**Step 1** — Fetching live market data (~60s)...")
