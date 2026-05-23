@@ -28,6 +28,119 @@ REDDIT_HEADERS = {
     "User-Agent": "luxury-resale-tracker/0.1 (research project)"
 }
 
+# 时尚相关 subreddit allowlist —— 用于全站搜索后做后置过滤
+# 小众品牌（Raf Simons / Helmut Lang）在固定 3 个 sub 命中率几乎为 0，
+# 改成"全站搜索 + 时尚 sub 白名单过滤"才能拿到信号
+FASHION_SUB_ALLOWLIST = {
+    # 核心 fashion sub
+    "grailed", "streetwear", "malefashionadvice", "femalefashionadvice",
+    "japanesestreetwear", "rawdenim", "highfashion", "frugalmalefashion",
+    "archivefashion", "fashion", "mensfashion", "womensfashion",
+    "streetstyle", "redditfashion", "fashionhistory", "themetgala",
+    "handbags", "sneakers",
+    # 品牌专属 sub
+    "rafsimons", "helmutlang", "balenciaga", "prada", "vetements", "yeezy",
+    # 明星 / 流行文化（穿搭新闻常出现在这里）
+    "fauxmoi", "popculturechat", "celebritygossip", "celebs",
+    # 复刻（也讨论真品对比，做品牌热度判断有效）
+    "designerreps", "fashionreps", "qualityrepsbst",
+}
+
+
+def fetch_wikipedia_pageviews(keyword: str, days: int = 90) -> dict:
+    """
+    Wikipedia Pageviews API —— 比 Google Trends 稳定得多的「话题热度」信号。
+
+    云环境（Streamlit Cloud 共享 IP）调 pytrends 几乎必被 429 限流；
+    Wikipedia REST API 不需要 key 也几乎不限流。
+    返回与 Google Trends 同样 schema 的 dict，便于直接替换：
+
+      {
+        "source":           "wikipedia",
+        "article":           匹配到的 Wikipedia 标题,
+        "trends_recent_4w":  近 28 天日均访问量,
+        "trends_historical": 全窗口日均访问量,
+        "trends_ratio":      recent_4w / historical（>1.2 = 上升）,
+        "daily":             [{date, views}, ...]  供绘图用,
+      }
+
+    失败时 ratio=None、daily=[]。404 时尝试常见后缀（_(brand), _(fashion_designer)）。
+    """
+    from datetime import datetime, timedelta
+
+    end   = datetime.today()
+    start = end - timedelta(days=days)
+    candidates = [
+        keyword.replace(" ", "_"),
+        keyword.replace(" ", "_") + "_(brand)",
+        keyword.replace(" ", "_") + "_(fashion_designer)",
+        keyword.replace(" ", "_") + "_(fashion_brand)",
+    ]
+    headers = {"User-Agent": "luxury-resale-tracker/0.1 (research project)"}
+
+    article_hit, items = None, []
+    for art in candidates:
+        url = (
+            "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/"
+            f"en.wikipedia/all-access/all-agents/{art}/daily/"
+            f"{start.strftime('%Y%m%d')}/{end.strftime('%Y%m%d')}"
+        )
+        try:
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                items = resp.json().get("items", [])
+                if items:
+                    article_hit = art
+                    break
+        except Exception as e:
+            print(f"[Wikipedia] {art} 报错: {e}")
+
+    if not items:
+        print(f"[Wikipedia] '{keyword}' 未找到匹配条目")
+        return {
+            "source":            "wikipedia",
+            "article":           None,
+            "trends_recent_4w":  None,
+            "trends_historical": None,
+            "trends_ratio":      None,
+            "daily":             [],
+        }
+
+    daily = [{"date": it["timestamp"][:8], "views": it.get("views", 0)} for it in items]
+    views = [d["views"] for d in daily]
+    recent  = sum(views[-28:]) / max(len(views[-28:]), 1)
+    overall = sum(views) / max(len(views), 1)
+    ratio   = round(recent / overall, 3) if overall > 0 else None
+
+    print(
+        f"[Wikipedia] '{keyword}' → '{article_hit}'  recent_4w={recent:.0f}  "
+        f"baseline={overall:.0f}  ratio={ratio}"
+    )
+    return {
+        "source":            "wikipedia",
+        "article":           article_hit,
+        "trends_recent_4w":  round(recent,  1),
+        "trends_historical": round(overall, 1),
+        "trends_ratio":      ratio,
+        "daily":             daily,
+    }
+
+
+def _brand_root(keyword: str) -> str:
+    """
+    把"品牌 + 系列 + 款式"的细分关键词降到品牌粒度，用于 Reddit / News / Trends。
+    例：'Raf Simons consumed tee' -> 'Raf Simons'
+        'Vetements'              -> 'Vetements'
+        'Number Nine AW03'       -> 'Number Nine'
+    经验规则：保留前 2 个词；若首词全大写或长度 >= 6 视为完整品牌名，则只保留 1 词。
+    """
+    parts = keyword.strip().split()
+    if not parts:
+        return keyword
+    if len(parts) == 1:
+        return parts[0]
+    return " ".join(parts[:2])
+
 
 # ================================================================
 # 1. Google Trends
@@ -125,6 +238,48 @@ def fetch_reddit_mentions(keyword: str, subreddits: list[str], limit: int = 100)
     }
 
 
+def fetch_reddit_mentions_global(keyword: str, limit: int = 50) -> dict:
+    """
+    Reddit 全站搜索 + 时尚 sub 白名单过滤。
+    云端环境（Streamlit Cloud / 共享 IP）调 www.reddit.com 经常被 Cloudflare 拦截；
+    old.reddit.com 对 bot 友好得多，先试 old，失败再退回 www。
+    """
+    params = {"q": keyword, "sort": "top", "limit": limit, "t": "month"}
+    endpoints = [
+        "https://old.reddit.com/search.json",
+        "https://www.reddit.com/search.json",
+    ]
+    posts = []
+    last_err = None
+    request_ok = False
+    for url in endpoints:
+        try:
+            resp = requests.get(url, headers=REDDIT_HEADERS, params=params, timeout=12)
+            resp.raise_for_status()
+            posts = resp.json()["data"]["children"]
+            request_ok = True
+            break
+        except Exception as e:
+            last_err = e
+    # 只有「请求都失败」才算 fail；请求成功但 0 条结果是正常的（小众词、组合词）
+    if not request_ok:
+        print(f"[Reddit-global] keyword={keyword} 全部端点失败: {last_err}")
+
+    total_posts, total_upvotes = 0, 0
+    for p in posts:
+        sub = p["data"].get("subreddit", "").lower()
+        if sub in FASHION_SUB_ALLOWLIST:
+            total_posts   += 1
+            total_upvotes += p["data"].get("ups", 0)
+
+    return {
+        "keyword":         keyword,
+        "reddit_posts_1m": total_posts,
+        "reddit_ups_1m":   total_upvotes,
+        "fetch_date":      datetime.today().strftime("%Y-%m-%d"),
+    }
+
+
 def fetch_all_reddit(keywords: list[str]) -> pd.DataFrame:
     results = []
     for kw in keywords:
@@ -176,32 +331,54 @@ if __name__ == "__main__":
 
 def fetch_google_news_rss(keyword: str, max_results: int = 5) -> list[dict]:
     """
-    Google News RSS 爬取，无需 API key
-    搜索词：{keyword} celebrity worn spotted fashion
-    返回: [{"title": ..., "link": ..., "published": ...}]
+    Google News RSS 爬取，无需 API key。
+    查询策略：只用 keyword 作为搜索词（原先拼 'celebrity worn spotted fashion' 是 AND
+    联结，词越多命中越少），抓回标题后再用关键词白名单做后置过滤，保留与明星/穿搭相关的条目。
+    含 2 次重试 + 15s 超时，缓解偶发 SSL 握手超时。
     """
     import urllib.parse
-    import urllib.request
     from xml.etree import ElementTree
 
-    query = urllib.parse.quote(f"{keyword} celebrity worn spotted fashion")
+    query = urllib.parse.quote(keyword)
     url   = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            tree = ElementTree.parse(r)
-        items = tree.findall(".//item")[:max_results]
-        return [
-            {
-                "title":     i.findtext("title",   ""),
-                "link":      i.findtext("link",    ""),
-                "published": i.findtext("pubDate", ""),
-            }
-            for i in items
-        ]
-    except Exception as e:
-        print(f"[Google News RSS] 报错: {e}")
+
+    # urllib 在 Python 3.9 + macOS 上经常报 "EOF occurred in violation of protocol"
+    # （SSL/TLS 握手不稳定），改用 requests 走 OpenSSL，命中率明显提升
+    root = None
+    last_err = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            resp.raise_for_status()
+            root = ElementTree.fromstring(resp.content)
+            break
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+    if root is None:
+        print(f"[Google News RSS] keyword={keyword} 重试 3 次仍失败: {last_err}")
         return []
+
+    # 关键词白名单 —— 标题命中任一则视为"明星/穿搭"相关
+    CELEB_TERMS = ("celebrity", "celebrities", "worn", "wearing", "wore",
+                   "spotted", "stars", "rocked", "rocks", "outfit",
+                   "look", "street style", "red carpet")
+
+    items = root.findall(".//item")
+    filtered = []
+    for i in items:
+        title = i.findtext("title", "") or ""
+        if not any(t in title.lower() for t in CELEB_TERMS):
+            continue
+        filtered.append({
+            "title":     title,
+            "link":      i.findtext("link",    ""),
+            "published": i.findtext("pubDate", ""),
+        })
+        if len(filtered) >= max_results:
+            break
+    return filtered
 
 
 def _extract_celebrity_names(headlines: list, client) -> Optional[str]:
@@ -265,29 +442,37 @@ def fetch_celebrity_buzz(keyword: str, llm_client=None) -> dict:
         "fetch_date":        _dt.date.today().isoformat(),
     }
 
-    # ── 1. Reddit ──────────────────────────────────────────────────────────────
+    # 三路信号都使用品牌粒度查询（'Raf Simons consumed tee' -> 'Raf Simons'），
+    # 否则细分款在 Reddit / News 命中率几乎为 0
+    brand = _brand_root(keyword)
+
+    # ── 1. Reddit（全站搜索 + 时尚 sub 白名单过滤） ────────────────────────────
     try:
-        celeb_query   = f"{keyword} celebrity OR worn OR spotted OR wearing"
-        reddit_result = fetch_reddit_mentions(celeb_query, REDDIT_SUBREDDITS)
+        reddit_result = fetch_reddit_mentions_global(brand, limit=50)
         result["reddit_posts_1m"] = reddit_result.get("reddit_posts_1m", 0)
         result["reddit_ups_1m"]   = reddit_result.get("reddit_ups_1m",   0)
     except Exception as e:
         print(f"[Celebrity Buzz] Reddit 报错: {e}")
 
-    # ── 2. Google Trends ───────────────────────────────────────────────────────
+    # ── 2. Topic Interest ──────────────────────────────────────────────────────
+    # 主源：Wikipedia Pageviews（云环境稳定）
+    # 备源：Google Trends（pytrends 在云端共享 IP 经常 429）
     try:
-        # 取前两词作为品牌粒度，避免过细
-        parts = keyword.split()
-        brand = " ".join(parts[:2]) if len(parts) > 1 else keyword
-        df_trends = fetch_google_trends([brand], timeframe="today 1-m")
-        if not df_trends.empty:
-            result["trends_ratio"] = float(df_trends.iloc[0].get("trends_ratio", 1.0))
+        wp = fetch_wikipedia_pageviews(brand, days=90)
+        if wp.get("trends_ratio") is not None:
+            result["trends_ratio"] = float(wp["trends_ratio"])
+            result["topic_source"] = "wikipedia"
+        else:
+            df_trends = fetch_google_trends([brand], timeframe="today 1-m")
+            if not df_trends.empty:
+                result["trends_ratio"] = float(df_trends.iloc[0].get("trends_ratio", 1.0))
+                result["topic_source"] = "google_trends"
     except Exception as e:
-        print(f"[Celebrity Buzz] Google Trends 报错: {e}")
+        print(f"[Celebrity Buzz] Topic Interest 报错: {e}")
 
     # ── 3. Google News RSS ─────────────────────────────────────────────────────
     try:
-        news = fetch_google_news_rss(keyword)
+        news = fetch_google_news_rss(brand)
         result["news_headlines"]    = [n["title"] for n in news[:3]]
         result["celebrity_mention"] = _extract_celebrity_names(
             result["news_headlines"], llm_client

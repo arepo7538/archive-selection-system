@@ -160,6 +160,9 @@ def build_scorecard():
     for col in score_cols:
         if col not in df.columns:
             df[col] = 5.0
+        # 关键 keyword 如果在某子指标下数据缺失（如 listings 为空 → avg_followers NaN），
+        # 这里用中性 5.0 兜底；否则 NaN 会传染到 total_score
+        df[col] = df[col].fillna(5.0)
 
     _sep("⑤ 加权总分")
     print(f"  权重配置: { {k: v for k, v in WEIGHTS.items()} }")
