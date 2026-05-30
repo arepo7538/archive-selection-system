@@ -173,17 +173,80 @@ def run():
     df_bigrams = bigram_ranking(records, top_n=20)
     print(df_bigrams.to_string())
 
-    # 保存
+    # 保存汇总排行
     today = datetime.today().strftime("%Y-%m-%d")
-    df_brands["table"]     = "brand_ranking"
+    df_brands["table"]      = "brand_ranking"
     df_brands["fetch_date"] = today
-    df_bigrams["table"]    = "bigram_ranking"
+    df_bigrams["table"]     = "bigram_ranking"
     df_bigrams["fetch_date"] = today
 
     out = pd.concat([df_brands, df_bigrams], ignore_index=True)
     out.to_csv("discovery.csv", index=False, encoding="utf-8-sig")
     print("\n✅ 结果已保存至 discovery.csv")
+
+    # 保存500条原始数据
+    df_raw = pd.DataFrame(records)
+    df_raw["fetch_date"] = today
+    # designer_names 是 list，转成逗号分隔字符串方便存 CSV
+    df_raw["designer_names"] = df_raw["designer_names"].apply(
+        lambda x: ", ".join(x) if isinstance(x, list) else str(x)
+    )
+    df_raw.to_csv("discovery_raw.csv", index=False, encoding="utf-8-sig")
+    print(f"✅ {len(df_raw)} 条原始数据已保存至 discovery_raw.csv")
+
     return df_brands, df_bigrams
+
+
+def get_candidate_keywords(top_n: int = 5, min_count: int = 3) -> list[str]:
+    """
+    从上次 discovery 结果读取高热度新品牌，作为候选关键词返回。
+    自动跳过已被现有 KEYWORDS 覆盖的品牌。
+
+    参数
+    ----
+    top_n     : 最多返回几个新品牌（默认5个）
+    min_count : 品牌在500条中出现次数的最低门槛（默认3次）
+
+    返回
+    ----
+    list[str]  — 例如 ["Rick Owens", "Chrome Hearts", "Maison Margiela"]
+    """
+    try:
+        df = pd.read_csv("discovery.csv")
+    except FileNotFoundError:
+        print("  [discovery] discovery.csv 不存在，跳过候选词注入（先运行 python discovery.py）")
+        return []
+
+    brand_df = (
+        df[df["table"] == "brand_ranking"]
+        .dropna(subset=["brand", "listing_count"])
+        .copy()
+    )
+    brand_df["listing_count"] = brand_df["listing_count"].astype(int)
+    brand_df = brand_df[brand_df["listing_count"] >= min_count].sort_values(
+        "listing_count", ascending=False
+    )
+
+    # 读取现有关键词列表，用于去重
+    try:
+        from grailed_scraper import KEYWORDS as _existing_kws
+        existing_lower = [kw.lower() for kw in _existing_kws]
+    except ImportError:
+        existing_lower = []
+
+    candidates: list[str] = []
+    for _, row in brand_df.iterrows():
+        brand = str(row["brand"]).strip()
+        if not brand:
+            continue
+        # 如果品牌名已是现有任一关键词的子串，则跳过（已覆盖）
+        already_covered = any(brand.lower() in kw for kw in existing_lower)
+        if not already_covered:
+            candidates.append(brand)
+        if len(candidates) >= top_n:
+            break
+
+    return candidates
 
 
 if __name__ == "__main__":
