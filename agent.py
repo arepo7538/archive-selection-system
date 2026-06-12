@@ -230,20 +230,39 @@ def get_price_prediction(keyword: str) -> dict:
         n_records          — number of matched historical records
         model              — "LR+XGBoost" or "simple_stats"
     """
-    hist_path = os.path.join(BASE_DIR, "data", "legacy_csv", "historical_sold.csv")
-    if not os.path.exists(hist_path):
-        hist_path = os.path.join(BASE_DIR, "samples", "sample_historical.csv")
-    if not os.path.exists(hist_path):
-        return {"predicted_price": None, "trend": "unknown",
-                "reason": "No historical CSV found."}
+    kw_lower = keyword.lower()
+    kw_tok = kw_lower.split()[0] if kw_lower.split() else kw_lower
 
     try:
-        df = pd.read_csv(hist_path)
-        kw_lower = keyword.lower()
-        mask = df["keyword"].apply(
-            lambda x: kw_lower in str(x).lower() or str(x).lower() in kw_lower
-        )
-        kw_df = df[mask].copy()
+        # 数据源:market.db 的 sold_records(品牌级全量,已清洗);失败回退旧 CSV
+        kw_df = pd.DataFrame()
+        try:
+            from lib import db as _db
+            _conn = _db.connect()
+            kw_df = pd.read_sql_query(
+                """SELECT brand AS keyword, sold_price_usd AS sold_price,
+                          sold_at AS sold_date
+                   FROM sold_records
+                   WHERE suspect_mislabel=0 AND sold_price_usd IS NOT NULL
+                     AND (brand LIKE ? OR title LIKE ?)""",
+                _conn, params=[f"%{kw_tok}%", f"%{kw_lower}%"],
+            )
+            _conn.close()
+        except Exception:
+            pass
+
+        if kw_df.empty:
+            hist_path = os.path.join(BASE_DIR, "data", "legacy_csv", "historical_sold.csv")
+            if not os.path.exists(hist_path):
+                hist_path = os.path.join(BASE_DIR, "samples", "sample_historical.csv")
+            if not os.path.exists(hist_path):
+                return {"predicted_price": None, "trend": "unknown",
+                        "reason": "No sold data in DB and no fallback CSV."}
+            df = pd.read_csv(hist_path)
+            mask = df["keyword"].apply(
+                lambda x: kw_lower in str(x).lower() or str(x).lower() in kw_lower
+            )
+            kw_df = df[mask].copy()
 
         if len(kw_df) < 5:
             return {"predicted_price": None, "trend": "unknown",
@@ -273,13 +292,15 @@ def get_price_prediction(keyword: str) -> dict:
         # ── Attempt full LR+XGBoost via price_model ───────────────────────────
         try:
             import price_model as pm
+            # 先 load_data:动态 TARGET_KEYWORDS(品牌名)在其中生成,
+            # 之后才能做首词模糊匹配("Number Nine AW03" → "Number (N)ine")
+            df_all = pm.load_data()
             matched_kw = next(
                 (tk for tk in pm.TARGET_KEYWORDS
-                 if kw_lower in tk.lower() or tk.lower() in kw_lower),
+                 if kw_tok in tk.lower() or tk.lower().split()[0] in kw_lower),
                 None,
             )
             if matched_kw:
-                df_all = pm.load_data()
                 if (
                     matched_kw in df_all["keyword"].values
                     and (df_all["keyword"] == matched_kw).sum() >= 10

@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS sold_records (
     seller_location   TEXT,
     sold_price_usd    REAL,
     price_includes_shipping INTEGER,
+    hearts            INTEGER,
     created_at        TEXT,
     sold_at           TEXT,
     days_to_sell      REAL,
@@ -119,6 +120,29 @@ CREATE TABLE IF NOT EXISTS scorecard (
     calc_date             TEXT NOT NULL,
     PRIMARY KEY (keyword, calc_date)   -- 每日快照保留历史,供回测与动量
 );
+
+-- 品牌池漏斗 L1:全平台热度时间序列(discovery 扫描 + 试用期浅采集共用)
+CREATE TABLE IF NOT EXISTS brand_heat (
+    brand          TEXT NOT NULL,
+    scan_date      TEXT NOT NULL,
+    source         TEXT NOT NULL DEFAULT 'discovery',  -- 'discovery' / 'probe'
+    listing_count  INTEGER,        -- discovery: 热门榜出现次数
+    avg_hearts     REAL,
+    median_price   REAL,
+    supply_total   INTEGER,        -- probe: 平台在售总量
+    demand_30d     INTEGER,        -- probe: 30 天成交总量
+    PRIMARY KEY (brand, scan_date, source)
+);
+
+-- 品牌池漏斗 L2:候选品牌(提名→试用→晋升/淘汰)
+CREATE TABLE IF NOT EXISTS candidates (
+    brand        TEXT PRIMARY KEY,
+    facet_name   TEXT,
+    nominated_at TEXT,
+    status       TEXT DEFAULT 'probation',   -- probation / ready / rejected
+    last_check   TEXT,
+    note         TEXT
+);
 """
 
 
@@ -128,6 +152,12 @@ def connect(db_path: str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
+    # 轻量迁移:老库的 sold_records 补 hearts 列(新库由 schema 创建)
+    try:
+        conn.execute("ALTER TABLE sold_records ADD COLUMN hearts INTEGER")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # 列已存在
     return conn
 
 
@@ -215,15 +245,16 @@ def insert_sold(conn: sqlite3.Connection, rows: list[dict]) -> int:
             """INSERT OR IGNORE INTO sold_records
                (source, listing_id, brand, title, category, item_type, series,
                 condition, size, seller_location, sold_price_usd,
-                price_includes_shipping, created_at, sold_at, days_to_sell,
-                suspect_mislabel, fetch_date)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                price_includes_shipping, hearts, created_at, sold_at,
+                days_to_sell, suspect_mislabel, fetch_date)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (r["source"], r["listing_id"], r["brand"], r.get("title"),
              r.get("category"), r.get("item_type"), r.get("series"),
              r.get("condition"), r.get("size"), r.get("seller_location"),
              r.get("sold_price_usd"), r.get("price_includes_shipping"),
-             r.get("created_at"), r.get("sold_at"), r.get("days_to_sell"),
-             r.get("suspect_mislabel", 0), r.get("fetch_date")),
+             r.get("hearts"), r.get("created_at"), r.get("sold_at"),
+             r.get("days_to_sell"), r.get("suspect_mislabel", 0),
+             r.get("fetch_date")),
         )
         n += cur.rowcount
     conn.commit()

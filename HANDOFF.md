@@ -13,13 +13,18 @@
 | T3 修 AI 分析页 | ✅ | ReAct 事件流适配完成;另补 data_confidence 推断、热度图改读库 |
 | T4 数据年龄警告 | ✅ | dashboard / Selection / Opportunities 已接入 |
 | T5 GitHub Actions | ✅ | weekly_collect.yml(注意:runner 无状态,DB 每周重建,接 Supabase 后解决) |
-| T6 品牌池自动化 | 🔶 半 | --suggest 提名已做;T6a brand_heat 入库、T6b 试用期浅采集、T6c 晋升降级【未做】 |
+| T6 品牌池自动化 | ✅ | brand_heat 入库 + scripts/universe.py(提名/试用浅采集/晋升/降级)全链路跑通;8 个候选试用中,Kapital/Undercover/If Six Was Nine 指标已达标,14 天试用期满即提示晋升 |
 | T7 捡漏雷达页 | ✅ | 已修正:上架天数改用平台 created_at(first_seen 首轮无区分度) |
+| price_model 读库 | ✅ | sold_records 7,400 条训练 5 个品牌模型(旧 CSV 仅 205 条);category 粗化 + 预测钳制防 LR 外推溢出;agent 价格工具同步升级(动态品牌匹配) |
 
 **文件结构已重组**:旧管道 → `legacy/`(勿 import);agent 即席搜索 → `collectors/grailed_search.py`;
 旧 CSV → `data/legacy_csv/`;演示数据 → `samples/`。清洗规则新增仿款话术过滤(inspired/bootleg/“品牌+style(d)”)。
 
-**剩余待办**:T6a/b/c(上表)→ Supabase 云库迁移 → price_model 改读 sold_records(1.1 万条 vs CSV 205 条)。
+**剩余待办**:
+1. Supabase 云库迁移【需用户先注册 supabase.com 拿连接串】— 解决 Actions runner 无状态问题
+2. AI 分析页端到端实测【需设置 DEEPSEEK_API_KEY】— 代码已审,缺 key 验证
+3. 每周本地跑 `python discovery.py && python scripts/universe.py`(或等 Supabase 后进 Actions);
+   2026-06-26 起试用期满,universe 会对达标品牌打印 watchlist 条目,人工拍板粘贴
 
 ## 0. 项目一句话
 

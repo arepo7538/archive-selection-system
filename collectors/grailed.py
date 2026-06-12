@@ -142,6 +142,7 @@ def _sold_row(hit: dict, brand: str) -> dict:
         "seller_location": hit.get("location", ""),
         "sold_price_usd":  hit.get("sold_price"),
         "price_includes_shipping": int(bool(hit.get("sold_price_includes_shipping"))),
+        "hearts":          hit.get("followerno", 0),
         "created_at":      _iso(created),
         "sold_at":         _iso(sold),
         "days_to_sell":    days,

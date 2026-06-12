@@ -140,11 +140,53 @@ def _mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 # 1. load_data
 # ══════════════════════════════════════════════════════════════════
 
+MIN_RECORDS_PER_TARGET = 100   # 品牌纳入建模的最低成交记录数
+
+_LOG_PRICE_CAP = 10.82   # ≈ log(50,000):预测还原上限,防 LR 病态外推溢出
+
+
+def _safe_exp(pred):
+    """log 价格 → 美元,钳制在 [$1, $50k] 防 inf。"""
+    import numpy as _np
+    return _np.exp(_np.clip(pred, 0.0, _LOG_PRICE_CAP))
+
+
 def load_data() -> pd.DataFrame:
     """
-    读取 historical_sold.csv（或 sample_historical.csv 兜底）。
-    只保留 TARGET_KEYWORDS 中的关键词，按 sold_date 排序。
+    优先读 data/market.db 的 sold_records(品牌级,1 万+ 条,suspect 已清洗);
+    库不可用时回退旧 CSV。TARGET_KEYWORDS 动态生成:数据决定建模对象。
     """
+    global TARGET_KEYWORDS
+    try:
+        from lib import db as _db
+        conn = _db.connect()
+        df = pd.read_sql_query(
+            """SELECT brand AS keyword, title, category, condition,
+                      COALESCE(hearts, 0) AS followers,
+                      sold_price_usd AS sold_price,
+                      sold_at AS sold_date, created_at
+               FROM sold_records
+               WHERE suspect_mislabel=0
+                 AND sold_price_usd IS NOT NULL AND sold_at IS NOT NULL""",
+            conn,
+        )
+        conn.close()
+        if len(df) >= MIN_RECORDS_PER_TARGET:
+            # category_path("bottoms.denim")粗化到顶层,与旧 CSV 口径一致,
+            # 避免几十列稀疏哑变量导致 LR 病态外推
+            df["category"] = (
+                df["category"].fillna("other").astype(str)
+                .str.split(".").str[0].replace("", "other")
+            )
+            counts = df["keyword"].value_counts()
+            TARGET_KEYWORDS = counts[counts >= MIN_RECORDS_PER_TARGET].index.tolist()
+            df = df[df["keyword"].isin(TARGET_KEYWORDS)].copy()
+            df["sold_date"] = pd.to_datetime(df["sold_date"], errors="coerce")
+            df = df.dropna(subset=["sold_date", "sold_price"])
+            return df.sort_values("sold_date").reset_index(drop=True)
+    except Exception as e:
+        print(f"  [price_model] 读库失败({e}),回退旧 CSV")
+
     path = os.path.join(BASE_DIR, "data", "legacy_csv", "historical_sold.csv")
     if not os.path.exists(path):
         path = os.path.join(BASE_DIR, "samples", "sample_historical.csv")
@@ -321,9 +363,9 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
     lr = LinearRegression()
     lr.fit(X_train, y_train)
 
-    lr_train_pred = np.exp(lr.predict(X_train))
-    lr_test_pred  = np.exp(lr.predict(X_test))
-    lr_all_pred   = np.exp(lr.predict(df[feature_cols].values))
+    lr_train_pred = _safe_exp(lr.predict(X_train))
+    lr_test_pred  = _safe_exp(lr.predict(X_test))
+    lr_all_pred   = _safe_exp(lr.predict(df[feature_cols].values))
 
     lr_train_mae  = mean_absolute_error(y_train_orig, lr_train_pred)
     lr_test_mae   = mean_absolute_error(y_test_orig,  lr_test_pred)
@@ -361,9 +403,9 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
         )
         xgb_model.fit(X_train, y_train)
 
-        xgb_train_pred = np.exp(xgb_model.predict(X_train))
-        xgb_test_pred  = np.exp(xgb_model.predict(X_test))
-        xgb_all_pred   = np.exp(xgb_model.predict(df[feature_cols].values))
+        xgb_train_pred = _safe_exp(xgb_model.predict(X_train))
+        xgb_test_pred  = _safe_exp(xgb_model.predict(X_test))
+        xgb_all_pred   = _safe_exp(xgb_model.predict(df[feature_cols].values))
 
         xgb_train_mae  = mean_absolute_error(y_train_orig, xgb_train_pred)
         xgb_test_mae   = mean_absolute_error(y_test_orig,  xgb_test_pred)
@@ -457,7 +499,7 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
             row = latest_row.copy()
             row.iloc[0, type_col_idx] = icode
             pred_log = float(best_model.predict(row.values)[0])
-            pred_price = float(np.exp(pred_log))
+            pred_price = float(_safe_exp(pred_log))
             subset = kw_df[kw_df["item_type"] == itype]["sold_price"]
             type_predictions[itype] = {
                 "predicted": pred_price,
@@ -475,7 +517,7 @@ def train_and_evaluate(df: pd.DataFrame) -> list:
                 for v in type_predictions.values()
             )
         else:
-            predicted_price = float(np.exp(best_model.predict(latest_row.values)[0]))
+            predicted_price = float(_safe_exp(best_model.predict(latest_row.values)[0]))
 
         pct_change = (predicted_price - avg_30d) / avg_30d * 100 if avg_30d else 0.0
         trend = "Rising" if pct_change > 5 else ("Declining" if pct_change < -5 else "Stable")

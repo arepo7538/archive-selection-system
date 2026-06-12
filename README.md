@@ -79,6 +79,8 @@ python run_collect.py                          # 全 watchlist 采集(每周跑)
 python run_collect.py --brand "Number (N)ine"  # 单品牌
 python scripts/reclassify.py                   # 改完 watchlist 规则后重算分类(秒级,不重爬)
 python scripts/migrate_csv.py                  # 一次性:旧 CSV 迁入库
+python discovery.py                            # 全平台热度扫描 → brand_heat 时间序列
+python scripts/universe.py                     # 品牌池漏斗:提名 → 试用浅采集 → 晋升/降级
 ```
 
 数据质量机制:错标清洗(designer 标签被蹭流量错标 → `suspect_mislabel` 标记)、

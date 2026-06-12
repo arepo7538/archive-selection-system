@@ -201,6 +201,32 @@ def run():
     df_raw.to_csv("data/discovery_raw.csv", index=False, encoding="utf-8-sig")
     print(f"✅ {len(df_raw)} 条原始数据已保存至 data/discovery_raw.csv")
 
+    # ── 品牌池漏斗 L1:热度时间序列入库(brand_heat)──────────
+    try:
+        from lib import db as _db
+        from collections import defaultdict as _dd
+        prices = _dd(list)
+        for r in records:
+            for b in r["designer_names"]:
+                if b.strip() and r.get("price_usd"):
+                    prices[b.strip()].append(r["price_usd"])
+        conn = _db.connect()
+        for _, row in df_brands.iterrows():
+            b = str(row["brand"])
+            med = float(pd.Series(prices[b]).median()) if prices[b] else None
+            conn.execute(
+                """INSERT OR REPLACE INTO brand_heat
+                   (brand, scan_date, source, listing_count, avg_hearts, median_price)
+                   VALUES (?,?,'discovery',?,?,?)""",
+                (b, today, int(row["listing_count"]),
+                 float(row["avg_followerno"]), med),
+            )
+        conn.commit()
+        conn.close()
+        print(f"✅ {len(df_brands)} 个品牌热度已写入 brand_heat 表")
+    except Exception as e:
+        print(f"⚠️  brand_heat 入库失败(不影响 CSV):{e}")
+
     return df_brands, df_bigrams
 
 
