@@ -145,9 +145,9 @@ def load_data() -> pd.DataFrame:
     读取 historical_sold.csv（或 sample_historical.csv 兜底）。
     只保留 TARGET_KEYWORDS 中的关键词，按 sold_date 排序。
     """
-    path = os.path.join(BASE_DIR, "historical_sold.csv")
+    path = os.path.join(BASE_DIR, "data", "legacy_csv", "historical_sold.csv")
     if not os.path.exists(path):
-        path = os.path.join(BASE_DIR, "sample_historical.csv")
+        path = os.path.join(BASE_DIR, "samples", "sample_historical.csv")
     df = pd.read_csv(path)
     df = df[df["keyword"].isin(TARGET_KEYWORDS)].copy()
     df["sold_date"] = pd.to_datetime(df["sold_date"], errors="coerce")

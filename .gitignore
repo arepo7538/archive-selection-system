@@ -2,6 +2,10 @@
 *.csv
 !sample_data.csv
 !sample_historical.csv
+!scorecard.csv
+
+# SQLite 数据库（本地数据,云端走 Supabase / 派生导出）
+data/
 
 # 环境变量 / 密钥
 .env

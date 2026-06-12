@@ -1,0 +1,64 @@
+# ════════════════════════════════════════════════════════════════
+# Watchlist — 采集与分类的唯一配置入口
+# 加品牌 = 加一个 brands 条目,代码零改动
+# ════════════════════════════════════════════════════════════════
+#
+# 字段说明
+#   name           品牌显示名(也是数据库里的 brand 字段)
+#   grailed_facet  Grailed designers.name 的精确值,一字不差
+#                  (已实测验证:精确匹配可避开 Vetememes / Karl Helmut 等山寨标签)
+#   title_tokens   错标清洗:标题(小写)须含其中任意一个,否则标记 suspect_mislabel
+#                  (卖家会蹭流量错标 designer,实测抓到过 Nine Inch Nails 标成 Number (N)ine)
+#   grailed_query  可选。超大品牌用查询词收窄采集范围(如 Prada 全量 9.3 万条,只采 bowling 相关)
+#   yahoo_query    预留:雅虎日拍搜索词(日文),phase 3 接入用
+#   series         本地分类规则:系列名 → 正则(对小写标题匹配,按顺序首个命中生效)
+#                  改规则【不用重爬】,对库内数据重跑 classify 即可全量重算
+
+brands:
+  - name: "Number (N)ine"
+    grailed_facet: "Number (N)ine"
+    title_tokens: ["number nine", "number (n)ine", "number(n)ine", "numbernine", "n(n)", "ナンバーナイン"]
+    yahoo_query: "ナンバーナイン"
+    series:
+      AW03: "aw03|aw 03|a/w 03|fw03|fw 03|touch me"
+      AW09: "aw09|aw 09|a/w 09|fw09|fw 09"
+
+  - name: "Hysteric Glamour"
+    grailed_facet: "Hysteric Glamour"
+    title_tokens: ["hysteric"]
+    yahoo_query: "ヒステリックグラマー"
+    series:
+      Snake: "snake"
+
+  - name: "Helmut Lang"
+    grailed_facet: "Helmut Lang"
+    title_tokens: ["helmut lang"]   # 不用裸 "helmut":会放行 Karl Helmut(另一品牌)
+    yahoo_query: "ヘルムートラング"
+    series:
+      SS99: "ss99|ss 99|s/s 99"
+      FW00: "fw00|fw 00|aw00|aw 00"
+      Bondage: "bondage"
+
+  - name: "Raf Simons"
+    grailed_facet: "Raf Simons"
+    title_tokens: ["raf simons", "raf by raf"]
+    yahoo_query: "ラフシモンズ"
+    series:
+      Consumed: "consumed"
+      FW02: "fw02|fw 02|aw02|aw 02|virginia creeper"
+
+  - name: "Vetements"
+    grailed_facet: "Vetements"
+    title_tokens: ["vetements"]
+    yahoo_query: "ヴェトモン"
+    series:
+      DHL: "dhl"
+
+  # 超大品牌示例:Prada 全量 93,031 条,按原有业务兴趣收窄到 bowling shirt
+  - name: "Prada"
+    grailed_facet: "Prada"
+    grailed_query: "bowling"
+    title_tokens: ["prada"]
+    yahoo_query: "プラダ ボウリングシャツ"
+    series:
+      Bowling: "bowling"

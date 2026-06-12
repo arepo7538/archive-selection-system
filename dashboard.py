@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from lib.theme import set_page, apply_theme
-from lib.data import load_scorecard
+from lib.data import load_scorecard, render_data_age_banner
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -33,6 +33,8 @@ st.markdown("""
   <div class="dash-meta">Quantitative archive fashion resale intelligence</div>
 </div>
 """, unsafe_allow_html=True)
+
+render_data_age_banner()
 
 
 # ── Data freshness overview ──────────────────────────────────────
@@ -105,7 +107,7 @@ st.markdown(f"""
   <div class="kpi-card rose">
     <div class="kpi-label">3 · AI Analysis</div>
     <div class="kpi-value">Live agent — any keyword, structured report</div>
-    <div class="kpi-sub">DeepSeek + Reddit + Google Trends</div>
+    <div class="kpi-sub">DeepSeek + Reddit + Wikipedia Pageviews</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -132,7 +134,7 @@ st.markdown("""
     </div>
     <div class="footer-item">
       <div class="fi-title">Agent</div>
-      <div class="fi-desc">LangGraph node DAG: preprocess → validator → fetch → score → analyze.</div>
+      <div class="fi-desc">ReAct tool-calling: validate → fetch → score → celebrity → predict → report.</div>
     </div>
   </div>
 </div>

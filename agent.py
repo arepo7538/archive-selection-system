@@ -119,7 +119,7 @@ def fetch_market_data(keyword: str) -> dict:
         avg_followers     — average favourites per listing (hype proxy)
         sample_listing_count / sample_sold_count
     """
-    from grailed_scraper import fetch_grailed_listings, fetch_grailed_sold_30d
+    from collectors.grailed_search import fetch_grailed_listings, fetch_grailed_sold_30d
 
     try:
         listings, nb_supply = fetch_grailed_listings(keyword)
@@ -168,35 +168,11 @@ def calculate_scarcity_score(
 
     Returns individual dimension scores + total_score + supply_demand_ratio.
     """
-    demand = max(demand_count_30d, 1)
-    ratio  = supply_count / demand
+    from lib.scoring import compute_scarcity_scores_for_agent
 
-    sd_score  = max(0.0, min(10.0, 10.0 - math.log1p(ratio) * 2.2))
-    vel_score = min(10.0, math.log1p(demand_count_30d) / math.log1p(200) * 10)
-    hype_score = min(10.0, math.log1p(avg_followers) / math.log1p(50) * 10)
-    momentum  = 5.0  # single snapshot — neutral
-
-    total = (
-        sd_score   * 0.35 +
-        vel_score  * 0.30 +
-        hype_score * 0.25 +
-        momentum   * 0.10
+    return compute_scarcity_scores_for_agent(
+        supply_count, demand_count_30d, avg_followers
     )
-
-    return {
-        "supply_demand_ratio":  round(ratio,      2),
-        "supply_demand_score":  round(sd_score,   2),
-        "velocity_score":       round(vel_score,  2),
-        "hype_score":           round(hype_score, 2),
-        "momentum_score":       momentum,
-        "total_score":          round(total,      2),
-        "score_breakdown": {
-            "supply_demand": f"{sd_score:.1f}/10  (ratio={ratio:.1f}, supply={supply_count}, demand_30d={demand_count_30d})",
-            "velocity":      f"{vel_score:.1f}/10  (demand_30d={demand_count_30d})",
-            "hype":          f"{hype_score:.1f}/10  (avg_followers={avg_followers})",
-            "momentum":      f"{momentum:.1f}/10  (N/A – single snapshot)",
-        },
-    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -254,9 +230,9 @@ def get_price_prediction(keyword: str) -> dict:
         n_records          — number of matched historical records
         model              — "LR+XGBoost" or "simple_stats"
     """
-    hist_path = os.path.join(BASE_DIR, "historical_sold.csv")
+    hist_path = os.path.join(BASE_DIR, "data", "legacy_csv", "historical_sold.csv")
     if not os.path.exists(hist_path):
-        hist_path = os.path.join(BASE_DIR, "sample_historical.csv")
+        hist_path = os.path.join(BASE_DIR, "samples", "sample_historical.csv")
     if not os.path.exists(hist_path):
         return {"predicted_price": None, "trend": "unknown",
                 "reason": "No historical CSV found."}

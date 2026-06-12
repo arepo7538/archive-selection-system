@@ -2,11 +2,16 @@
 Discovery 模块：无预设品牌，让数据自己发现 designer/luxury 热门单品
 - 按 followerno 降序抓取 grailed/hype 品类前500条
 - 输出 Top10 品牌热度榜 + Top20 高频单品词组榜
+- --suggest:对比 watchlist,提名未跟踪的高热品牌
 """
 
+from __future__ import annotations
+
+import argparse
 import re
 import requests
 import pandas as pd
+import yaml
 from collections import Counter, defaultdict
 from datetime import datetime
 
@@ -180,9 +185,11 @@ def run():
     df_bigrams["table"]     = "bigram_ranking"
     df_bigrams["fetch_date"] = today
 
+    import os as _os
+    _os.makedirs("data", exist_ok=True)
     out = pd.concat([df_brands, df_bigrams], ignore_index=True)
-    out.to_csv("discovery.csv", index=False, encoding="utf-8-sig")
-    print("\n✅ 结果已保存至 discovery.csv")
+    out.to_csv("data/discovery.csv", index=False, encoding="utf-8-sig")
+    print("\n✅ 结果已保存至 data/discovery.csv")
 
     # 保存500条原始数据
     df_raw = pd.DataFrame(records)
@@ -191,8 +198,8 @@ def run():
     df_raw["designer_names"] = df_raw["designer_names"].apply(
         lambda x: ", ".join(x) if isinstance(x, list) else str(x)
     )
-    df_raw.to_csv("discovery_raw.csv", index=False, encoding="utf-8-sig")
-    print(f"✅ {len(df_raw)} 条原始数据已保存至 discovery_raw.csv")
+    df_raw.to_csv("data/discovery_raw.csv", index=False, encoding="utf-8-sig")
+    print(f"✅ {len(df_raw)} 条原始数据已保存至 data/discovery_raw.csv")
 
     return df_brands, df_bigrams
 
@@ -212,9 +219,9 @@ def get_candidate_keywords(top_n: int = 5, min_count: int = 3) -> list[str]:
     list[str]  — 例如 ["Rick Owens", "Chrome Hearts", "Maison Margiela"]
     """
     try:
-        df = pd.read_csv("discovery.csv")
+        df = pd.read_csv("data/discovery.csv")
     except FileNotFoundError:
-        print("  [discovery] discovery.csv 不存在，跳过候选词注入（先运行 python discovery.py）")
+        print("  [discovery] data/discovery.csv 不存在，跳过候选词注入（先运行 python discovery.py）")
         return []
 
     brand_df = (
@@ -249,5 +256,90 @@ def get_candidate_keywords(top_n: int = 5, min_count: int = 3) -> list[str]:
     return candidates
 
 
+def _load_watchlist_brands(path: str = "watchlist.yaml") -> set[str]:
+    with open(path, encoding="utf-8") as f:
+        brands = yaml.safe_load(f)["brands"]
+    tracked = set()
+    for b in brands:
+        tracked.add(b["name"].lower())
+        tracked.add(b.get("grailed_facet", b["name"]).lower())
+    return tracked
+
+
+def _suggest_yaml_entry(brand: str, facet: str, nb_hits: int) -> str:
+    token = brand.split()[0].lower() if brand.split() else brand.lower()
+    return (
+        f'  - name: "{brand}"\n'
+        f'    grailed_facet: "{facet}"\n'
+        f'    title_tokens: ["{token}"]\n'
+        f'    yahoo_query: ""\n'
+        f'    series: {{}}\n'
+        f'    # facet 验证: {nb_hits:,} 条在售'
+    )
+
+
+def suggest_watchlist(top_n: int = 5, min_count: int = 3) -> None:
+    """对比 watchlist,打印未跟踪高热品牌 TopN + 可复制 yaml 条目。"""
+    from collectors.grailed import verify_designer_facet
+
+    print("=" * 60)
+    print("  Watchlist 品牌提名 (--suggest)")
+    print("=" * 60)
+
+    tracked = _load_watchlist_brands()
+    print(f"\n当前 watchlist 跟踪 {len(tracked)} 个品牌名/facet\n")
+
+    print(f"抓取 grailed/hype Top{TARGET_TOTAL} 按 followerno 排序...")
+    records = fetch_top_listings(TARGET_TOTAL)
+    df_brands = brand_ranking(records, top_n=50)
+    df_brands = df_brands[df_brands["listing_count"] >= min_count]
+
+    untracked = []
+    for _, row in df_brands.iterrows():
+        brand = str(row["brand"]).strip()
+        if brand.lower() in tracked:
+            continue
+        untracked.append(row)
+        if len(untracked) >= top_n:
+            break
+
+    if not untracked:
+        print("未发现 watchlist 外的高热品牌(或均已跟踪)。")
+        return
+
+    print(f"\n未跟踪的高热品牌 Top{len(untracked)}:\n")
+    for i, row in enumerate(untracked, 1):
+        brand = str(row["brand"])
+        print(f"  [{i}] {brand} — 出现 {int(row['listing_count'])} 次, "
+              f"avg followerno {row['avg_followerno']}")
+
+    print("\n" + "─" * 60)
+    print("建议 watchlist.yaml 条目(facet 已验证,可直接复制):\n")
+    for row in untracked:
+        brand = str(row["brand"])
+        check = verify_designer_facet(brand)
+        if check["valid"]:
+            facet = check["facet"]
+            nb = check["nb_hits"]
+            status = "✅"
+        else:
+            facet = brand
+            nb = 0
+            status = "⚠️ facet 未命中,请手动核对 Grailed designers.name"
+        print(f"# {status}")
+        print(_suggest_yaml_entry(brand, facet, nb))
+        print()
+
+
 if __name__ == "__main__":
-    run()
+    ap = argparse.ArgumentParser(description="Archive 热门品牌/单品发现")
+    ap.add_argument(
+        "--suggest",
+        action="store_true",
+        help="对比 watchlist,提名未跟踪的高热品牌(含 facet 验证)",
+    )
+    args = ap.parse_args()
+    if args.suggest:
+        suggest_watchlist()
+    else:
+        run()

@@ -6,25 +6,33 @@ A quantitative analysis system for identifying and evaluating high-potential arc
 
 ```
 .
-├── dashboard.py              # Entry point — landing page (streamlit run dashboard.py)
+├── dashboard.py              # Streamlit 入口(landing page)
 ├── pages/
-│   ├── 1_Selection.py        # Page 1: item ranking, radar chart, scatter plot
-│   ├── 2_Price_Prediction.py # Page 2: LR + XGBoost forecasts, trend charts
-│   └── 3_AI_Analysis.py      # Page 3: LangGraph AI agent, real-time analysis
+│   ├── 1_Selection.py        # 排行 / 雷达 / 散点
+│   ├── 2_Price_Prediction.py # LR + XGBoost 预测
+│   ├── 3_AI_Analysis.py      # ReAct agent 实时分析
+│   └── 4_Opportunities.py    # 捡漏雷达(库内低价×新鲜×高热)
 ├── lib/
-│   ├── theme.py              # Shared CSS theme + set_page() / apply_theme()
-│   └── data.py               # Cached data loaders (load_scorecard, load_prediction_data)
-├── agent.py                  # LangGraph ReAct tool-calling agent
-├── social_signals.py         # Wikipedia Pageviews + Reddit + News RSS signals
-├── scorecard.py              # Weighted composite scoring (4 dimensions)
-├── price_model.py            # LR + XGBoost price prediction pipeline
-├── grailed_scraper.py        # Grailed Algolia API: listings / sold / totals
-├── historical_scraper.py     # 180-day historical sold records
-├── discovery.py              # Trending item discovery (no preset brand list)
-├── run_weekly.py             # Orchestrates weekly scrape → score pipeline
-├── scorecard.csv             # Latest scorecard output
-├── historical_sold.csv       # 180-day sold history
-└── requirements.txt
+│   ├── db.py                 # SQLite 存储层(唯一事实来源)
+│   ├── scoring.py            # 统一打分(绝对 log 基线,agent 与 scorecard 共用)
+│   ├── classify.py           # 本地分类:系列/品类/错标清洗
+│   ├── data.py               # 缓存加载 + 数据年龄警告
+│   └── theme.py              # 共享样式
+├── collectors/
+│   ├── grailed.py            # 品牌级全量采集(facet + 切片)
+│   └── grailed_search.py     # 关键词即席搜索(供 agent)
+├── scripts/                  # migrate_csv.py · reclassify.py
+├── agent.py                  # LangGraph ReAct agent(5 个 @tool)
+├── price_model.py            # LR + XGBoost 价格预测
+├── social_signals.py         # Wikipedia / Reddit / News 信号
+├── discovery.py              # 全平台热度扫描 + --suggest 品牌提名
+├── run_collect.py            # 采集管道入口(每周)
+├── scorecard.py              # 读库打分 → scorecard 表 + scorecard.csv
+├── watchlist.yaml            # 品牌池配置(采集 + 分类规则)
+├── data/                     # market.db + legacy_csv/(gitignore,不入库)
+├── samples/                  # 演示兜底数据
+├── legacy/                   # 已退役旧管道(仅存档,见 legacy/README.md)
+└── .github/workflows/        # weekly_collect.yml 每周定时采集
 ```
 
 ## System Architecture
@@ -44,6 +52,39 @@ discovery.py  ───> (listings/sold/       (weighted scoring   scraper.py   
                                                             price_model.py        └────────────────────┘
                                                             (LR + XGBoost)
 ```
+
+## Data Layer v2 — 品牌级全量采集 + SQLite(2026-06)
+
+取数逻辑重构:不再用搜索词抓样本,改为**品牌为主键拉平台全量,系列/品类在本地分类**。
+
+```
+watchlist.yaml          collectors/grailed.py        data/market.db (SQLite)
+品牌+别名+系列规则  ──>  designer facet 全量         listings        在售主表(快照差分)
+                        category/价格两级切片        listing_events  价格/收藏变动事件
+                        sold 时间窗递归回填          sold_records    已售(含在架天数)
+                                                    pipeline_runs   运行元数据+质量门禁
+```
+
+| 对比 | 旧(关键词搜索) | 新(品牌 facet 全量) |
+|------|---------------|---------------------|
+| Number (N)ine 在售 | 708 条(含噪声) | **13,740 条** |
+| Number (N)ine 已售 | 全部品牌共 179 条 | 单品牌 180 天 **3,176 条** |
+| 价格历史 | 无(去重 bug 丢更新) | listing_events 逐次记录 |
+| 流速指标 | 30 天成交数 | **在架天数**(created→sold) |
+
+常用命令:
+
+```bash
+python run_collect.py                          # 全 watchlist 采集(每周跑)
+python run_collect.py --brand "Number (N)ine"  # 单品牌
+python scripts/reclassify.py                   # 改完 watchlist 规则后重算分类(秒级,不重爬)
+python scripts/migrate_csv.py                  # 一次性:旧 CSV 迁入库
+```
+
+数据质量机制:错标清洗(designer 标签被蹭流量错标 → `suspect_mislabel` 标记)、
+质量门禁(抓取量比上次暴跌 50% 拒绝落盘)、`pipeline_runs` 全程留痕。
+
+> 旧管道(`run_weekly.py` + CSV)暂时保留,scorecard/dashboard 切到读库后下线。
 
 ## LangGraph ReAct Agent (`feature/react-agent`)
 

@@ -15,18 +15,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from lib.theme import set_page, apply_theme
-from lib.data import load_scorecard
+from lib.data import load_scorecard, render_data_age_banner
 
 
 set_page("Selection — Archive Dashboard")
 apply_theme()
+render_data_age_banner()
 
 try:
     df = load_scorecard()
 except FileNotFoundError:
     st.error(
         "Cannot find scorecard.csv or sample_data.csv. "
-        "Please run `python run_weekly.py` first."
+        "Please run `python scorecard.py` first."
     )
     st.stop()
 

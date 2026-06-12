@@ -6,8 +6,8 @@ Page 3 — AI Analysis
 
 import sys
 import os
+import json
 import threading
-import random
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,7 +45,7 @@ if "ai_history" not in st.session_state:
 with st.sidebar:
     st.markdown("### Quick Select")
     if df.empty:
-        st.caption("Run `python run_weekly.py` to populate quick-select keywords.")
+        st.caption("Run `python scorecard.py` to populate quick-select keywords.")
     else:
         for kw in df["keyword"].tolist():
             label = kw if len(kw) <= 26 else kw[:24] + "…"
@@ -62,7 +62,7 @@ st.markdown(
 st.markdown("""
 <div class="dash-header">
   <div class="dash-title">AI Analysis</div>
-  <div class="dash-meta">DeepSeek · Real-time Grailed data · ~60s per query</div>
+  <div class="dash-meta">DeepSeek · Real-time Grailed data · ReAct tool-calling · ~60s per query</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -92,6 +92,26 @@ st.caption(
 
 
 # ── Trigger analysis ─────────────────────────────────────────────
+_TOOL_LABELS = {
+    "validate_brand": "Step 0.5 — Validating archive brand",
+    "fetch_market_data": "Step 1 — Fetching live market data",
+    "fetch_celebrity_signal": "Step 2.5 — Checking celebrity catalyst signals",
+    "calculate_scarcity_score": "Step 3 — Calculating scarcity score",
+    "get_price_prediction": "Step 3 — Running price prediction",
+}
+
+
+def _parse_tool_content(content) -> dict:
+    if isinstance(content, dict):
+        return content
+    if not content:
+        return {}
+    try:
+        return json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
 if analyze_clicked:
     kw = (keyword_input or "").strip()
     if not kw:
@@ -99,114 +119,118 @@ if analyze_clicked:
     elif not os.environ.get("DEEPSEEK_API_KEY"):
         st.error("Please set the DEEPSEEK_API_KEY environment variable before running analysis.")
     else:
-        from agent import app as agent_app
+        from agent import stream_analyze_react
+        from langchain_core.messages import AIMessage, ToolMessage
 
-        initial_state = {
-            "keyword": kw, "original_keyword": "", "was_translated": False,
-            "retry_count": 0, "keyword_relaxed": False,
-            "market_data": {}, "score_data": {},
-            "price_prediction": {}, "celebrity_data": {},
+        result = {
+            "keyword": kw,
+            "market_data": {},
+            "score_data": {},
+            "price_prediction": {},
+            "celebrity_data": {},
             "data_confidence": {},
-            "final_report": "", "messages": [],
-            "rejection_reason": None, "suggestions": [],
+            "final_report": "",
+            "rejection_reason": None,
+            "suggestions": [],
         }
-        result = {"keyword": kw}
+        rejected = False
 
         try:
             with st.status("Agent running...", expanded=True) as status:
-                st.write("**Step 0** — Detecting input language...")
+                for event in stream_analyze_react(kw):
+                    if "agent" in event:
+                        for msg in event["agent"].get("messages", []):
+                            if isinstance(msg, AIMessage) and msg.content:
+                                tool_calls = getattr(msg, "tool_calls", None) or []
+                                if not tool_calls:
+                                    result["final_report"] = msg.content
 
-                for event in agent_app.stream(initial_state, stream_mode="updates"):
-                    node_name = list(event.keys())[0]
-                    node_output = event[node_name]
-                    if node_output is None:
+                    if "tools" not in event:
                         continue
-                    result.update(node_output)
 
-                    if node_name == "preprocess":
-                        if node_output.get("was_translated"):
-                            orig = node_output.get("original_keyword", kw)
-                            translated = node_output.get("keyword", "")
-                            st.write(f"Translated: {orig} → {translated}")
+                    for msg in event["tools"].get("messages", []):
+                        if not isinstance(msg, ToolMessage):
+                            continue
+                        data = _parse_tool_content(msg.content)
+                        label = _TOOL_LABELS.get(msg.name, msg.name)
+                        st.write(f"**{label}** — done")
 
-                    elif node_name == "brand_validator":
-                        rejection = node_output.get("rejection_reason")
-                        if rejection:
-                            suggestions = node_output.get("suggestions", [])
-                            sugg_str = (
-                                " · ".join(suggestions)
-                                if suggestions
-                                else "Helmut Lang · Raf Simons · Number Nine"
-                            )
-                            st.warning(
-                                f"**Not an archive brand:** {rejection}\n\n"
-                                f"Try these instead: {sugg_str}"
-                            )
-                            status.update(label="Analysis stopped", state="error")
-                            break
-                        else:
-                            st.write("Step 0.5 done — Archive brand verified")
-                        st.write("**Step 1** — Fetching live market data (~60s)...")
+                        if msg.name == "validate_brand":
+                            if not data.get("is_archive", True):
+                                rejected = True
+                                result["rejection_reason"] = data.get("reason", "Not archive fashion")
+                                result["suggestions"] = data.get("suggestions", [])
+                                sugg_str = (
+                                    " · ".join(result["suggestions"])
+                                    if result["suggestions"]
+                                    else "Helmut Lang · Raf Simons · Number Nine"
+                                )
+                                st.warning(
+                                    f"**Not an archive brand:** {result['rejection_reason']}\n\n"
+                                    f"Try these instead: {sugg_str}"
+                                )
+                                status.update(label="Analysis stopped", state="error")
+                                break
+                            st.write("Archive brand verified")
 
-                    elif node_name == "fetch_data":
-                        pass
-
-                    elif node_name == "validator":
-                        md = result.get("market_data", {})
-                        supply = md.get("supply_count", 0)
-                        if node_output.get("keyword_relaxed"):
-                            relaxed_kw = node_output.get("keyword", "")
+                        elif msg.name == "fetch_market_data":
+                            result["market_data"] = data
+                            supply = data.get("supply_count", 0)
+                            demand = data.get("demand_count_30d", 0)
+                            sample = data.get("sample_listing_count", 0)
+                            if supply >= 100 and demand >= 10:
+                                _lvl, _why = "high", f"{int(supply):,} listings · {int(demand):,} sold/30d"
+                            elif supply >= 20:
+                                _lvl, _why = "medium", f"{int(supply):,} listings · sample n={sample}"
+                            else:
+                                _lvl, _why = "low", f"only {int(supply):,} listings"
+                            result["data_confidence"] = {"level": _lvl, "reason": _why}
                             st.write(
-                                f"Low supply ({supply} listings) — broadening keyword to "
-                                f"**'{relaxed_kw}'**, retrying..."
+                                f"Listed **{int(supply):,}** · "
+                                f"Sold (30d) **{int(demand):,}**"
                             )
-                        else:
-                            demand = md.get("demand_count_30d", 0)
-                            s_str  = f"{int(supply):,}" if supply else "?"
-                            d_str  = f"{int(demand):,}" if demand else "?"
-                            st.write(
-                                f"Step 1 done — **{s_str}** listed, "
-                                f"**{d_str}** sold in last 30 days"
-                            )
-                            st.write("**Step 2.5** — Checking celebrity catalyst signals...")
 
-                    elif node_name == "celebrity_signal":
-                        buzz   = node_output.get("celebrity_data", {})
-                        level  = buzz.get("buzz_level", "none")
-                        celeb  = buzz.get("celebrity_mention")
-                        if level == "high":
-                            mention_str = f"**{celeb}**" if celeb else "celebrity signal"
-                            st.write(f"HIGH BUZZ DETECTED — {mention_str}")
-                        elif level in ("medium", "low"):
-                            st.write(f"Celebrity signal: {level}")
-                        else:
-                            st.write("No celebrity catalyst detected")
-                        st.write("**Step 3** — Calculating scarcity score...")
+                        elif msg.name == "calculate_scarcity_score":
+                            result["score_data"] = data
+                            score = data.get("total_score", "?")
+                            st.write(f"Composite score **{score}/10**")
 
-                    elif node_name == "score":
-                        sd    = node_output.get("score_data", {})
-                        pp    = node_output.get("price_prediction") or {}
-                        score = sd.get("total_score", "?")
-                        pred_val = pp.get("predicted_price")
-                        pred_str = f", predicted price **${pred_val:.0f}**" if pred_val is not None else ""
-                        st.write(f"Step 3 done — Composite score **{score}/10**{pred_str}")
-                        st.write("**Step 4** — AI generating analysis report...")
+                        elif msg.name == "fetch_celebrity_signal":
+                            result["celebrity_data"] = data
+                            level = data.get("buzz_level", "none")
+                            celeb = data.get("celebrity_mention")
+                            if level == "high":
+                                mention_str = f"**{celeb}**" if celeb else "celebrity signal"
+                                st.write(f"HIGH BUZZ DETECTED — {mention_str}")
+                            elif level in ("medium", "low"):
+                                st.write(f"Celebrity signal: {level}")
+                            else:
+                                st.write("No celebrity catalyst detected")
 
-                    elif node_name == "analyze":
-                        st.write("Step 4 done — Report ready")
+                        elif msg.name == "get_price_prediction":
+                            result["price_prediction"] = data
+                            pred_val = data.get("predicted_price")
+                            if pred_val is not None:
+                                st.write(f"Predicted price **${pred_val:.0f}**")
 
-                status.update(label="Analysis complete", state="complete")
+                    if rejected:
+                        break
 
-            result["keyword"] = kw
-            st.session_state["ai_result"] = result
-            st.session_state["ai_history"] = [{
-                "keyword":     kw,
-                "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "report":      result.get("final_report", ""),
-                "market_data": result.get("market_data", {}),
-                "score_data":  result.get("score_data",  {}),
-            }] + st.session_state["ai_history"]
-            st.session_state["ai_history"] = st.session_state["ai_history"][:10]
+                if not rejected:
+                    status.update(label="Analysis complete", state="complete")
+
+            if not rejected:
+                st.session_state["ai_result"] = result
+                st.session_state["ai_history"] = [{
+                    "keyword":     kw,
+                    "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "report":      result.get("final_report", ""),
+                    "market_data": result.get("market_data", {}),
+                    "score_data":  result.get("score_data",  {}),
+                }] + st.session_state["ai_history"]
+                st.session_state["ai_history"] = st.session_state["ai_history"][:10]
+            else:
+                st.session_state["ai_result"] = None
 
         except Exception as e:
             st.error(f"Analysis failed: {e}")
@@ -383,11 +407,28 @@ if st.session_state.get("ai_result"):
 
     _hist_plotted = False
     try:
-        _hist_path = os.path.join(BASE_DIR, "historical_sold.csv")
-        if os.path.exists(_hist_path):
-            _hist = pd.read_csv(_hist_path)
-            if display_kw in _hist["keyword"].values:
-                _kd = _hist[_hist["keyword"] == display_kw].copy()
+        # 优先读 market.db 的已售记录(品牌级,1 万+条);兜底走旧 CSV
+        _kd = pd.DataFrame()
+        _kw_tok = display_kw.split()[0] if display_kw.split() else display_kw
+        try:
+            from lib import db as _db
+            _conn = _db.connect()
+            _kd = pd.read_sql_query(
+                """SELECT sold_at AS sold_date FROM sold_records
+                   WHERE suspect_mislabel=0 AND sold_at IS NOT NULL
+                     AND (brand LIKE ? OR title LIKE ?)""",
+                _conn, params=[f"%{_kw_tok}%", f"%{display_kw}%"],
+            )
+            _conn.close()
+        except Exception:
+            pass
+        if _kd.empty:
+            _hist_path = os.path.join(BASE_DIR, "data", "legacy_csv", "historical_sold.csv")
+            if os.path.exists(_hist_path):
+                _hist = pd.read_csv(_hist_path)
+                if display_kw in _hist["keyword"].values:
+                    _kd = _hist[_hist["keyword"] == display_kw][["sold_date"]].copy()
+        if not _kd.empty:
                 _kd["sold_date"] = pd.to_datetime(_kd["sold_date"])
                 _monthly = (
                     _kd.groupby(_kd["sold_date"].dt.to_period("M"))
