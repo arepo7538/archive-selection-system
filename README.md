@@ -72,6 +72,23 @@ watchlist.yaml          collectors/grailed.py        data/market.db (SQLite)
 | 价格历史 | 无(去重 bug 丢更新) | listing_events 逐次记录 |
 | 流速指标 | 30 天成交数 | **在架天数**(created→sold) |
 
+### 存储后端:本地 SQLite ↔ Supabase 一键切换
+
+`lib/db.py` 内置 Postgres 透明兼容层:
+
+- **不设 `DATABASE_URL`** → 本地 `data/market.db`(SQLite,零配置)
+- **设了 `DATABASE_URL`**(`.env` 或 Actions/Streamlit secret)→ Supabase Postgres
+
+调用方代码完全一致 —— 占位符 `?`、`INSERT OR REPLACE/IGNORE` 在 PG 端自动翻译。
+GitHub Actions 与 Streamlit Cloud 共享同一个 Supabase 库,实现"采集端写、展示端读"的持久化闭环。
+
+```bash
+# 首次迁移本地数据到 Supabase(配好 .env 后)
+python scripts/migrate_to_postgres.py
+```
+
+> Supabase 连接串用 **6543 事务池端口**(5432 直连是 IPv6,云端常连不上)。
+
 常用命令:
 
 ```bash

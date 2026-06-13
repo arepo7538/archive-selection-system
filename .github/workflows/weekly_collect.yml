@@ -6,13 +6,12 @@ on:
     - cron: "0 1 * * 1"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   collect:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Supabase 连接串(仓库 Secrets 配置)
 
     steps:
       - name: Checkout
@@ -26,20 +25,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Guard — DATABASE_URL must be set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret 未配置。仓库 Settings → Secrets → Actions 添加。"
+            exit 1
+          fi
+
       - name: Run brand collection
         run: python run_collect.py
 
       - name: Build scorecard
         run: python scorecard.py
 
-      - name: Commit derived CSVs
+      - name: Discover + universe funnel
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add scorecard.csv
-          if git diff --staged --quiet; then
-            echo "No CSV changes to commit"
-          else
-            git commit -m "chore: weekly data refresh [skip ci]"
-            git push
-          fi
+          python discovery.py
+          python scripts/universe.py
+        # 数据全部落 Supabase(持久化),runner 无需 commit 任何文件

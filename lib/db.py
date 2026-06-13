@@ -19,11 +19,22 @@ SQLite 存储层 — 市场数据的唯一事实来源(data/market.db)
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from datetime import datetime
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "data", "market.db")
+
+# 设了 DATABASE_URL → 用 Supabase/Postgres;否则本地 SQLite(零配置兜底)
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+IS_POSTGRES = DATABASE_URL.startswith("postgres")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -146,13 +157,114 @@ CREATE TABLE IF NOT EXISTS candidates (
 """
 
 
-def connect(db_path: str = DB_PATH) -> sqlite3.Connection:
-    """打开(必要时初始化)数据库。"""
+# ════════════════════════════════════════════════════════════════
+# Postgres 透明兼容层
+#   目标:让所有调用方(用 sqlite3 风格的 ? 占位符 + INSERT OR REPLACE/IGNORE)
+#   无需改一行代码即可跑在 Supabase/Postgres 上。
+# ════════════════════════════════════════════════════════════════
+
+# 各表主键,用于把 SQLite 的 INSERT OR REPLACE 翻译成 PG 的 ON CONFLICT
+_PK = {
+    "listings":       ["source", "listing_id"],
+    "listing_events": ["source", "listing_id", "event_date"],
+    "sold_records":   ["source", "listing_id"],
+    "scorecard":      ["keyword", "calc_date"],
+    "brand_heat":     ["brand", "scan_date", "source"],
+    "candidates":     ["brand"],
+}
+
+
+def _translate(sql: str) -> str:
+    """SQLite 方言 → Postgres 方言(占位符 + upsert 语法)。"""
+    sql = sql.replace("?", "%s")
+
+    m = re.match(r"\s*INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)", sql, re.I)
+    if m:
+        sql = re.sub(r"INSERT\s+OR\s+IGNORE\s+INTO", "INSERT INTO", sql, flags=re.I)
+        return sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+
+    m = re.match(r"\s*INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)", sql, re.I)
+    if m:
+        table = m.group(1)
+        cols = [c.strip() for c in m.group(2).split(",")]
+        pk = _PK.get(table, [])
+        sql = re.sub(r"INSERT\s+OR\s+REPLACE\s+INTO", "INSERT INTO", sql, flags=re.I).rstrip().rstrip(";")
+        if not pk:
+            return sql
+        updates = [c for c in cols if c not in pk]
+        if not updates:
+            return sql + f" ON CONFLICT ({', '.join(pk)}) DO NOTHING"
+        set_clause = ", ".join(f"{c}=EXCLUDED.{c}" for c in updates)
+        return sql + f" ON CONFLICT ({', '.join(pk)}) DO UPDATE SET {set_clause}"
+
+    return sql
+
+
+class _PgCursor:
+    """包一层 psycopg2 cursor:execute 翻译方言并返回自身(模仿 sqlite3)。"""
+    def __init__(self, raw):
+        self._cur = raw
+
+    def execute(self, sql, params=()):
+        self._cur.execute(_translate(sql), params)
+        return self
+
+    def executemany(self, sql, seq):
+        self._cur.executemany(_translate(sql), list(seq))
+        return self
+
+    def fetchone(self):  return self._cur.fetchone()
+    def fetchall(self):  return self._cur.fetchall()
+    def close(self):     self._cur.close()
+    def __iter__(self):  return iter(self._cur)
+
+    @property
+    def rowcount(self):   return self._cur.rowcount
+    @property
+    def description(self): return self._cur.description
+
+
+class _PgConn:
+    """把 psycopg2 连接伪装成 sqlite3.Connection 的接口子集。"""
+    def __init__(self, raw):
+        self._raw = raw
+
+    def execute(self, sql, params=()):
+        cur = self._raw.cursor()
+        cur.execute(_translate(sql), params)
+        return _PgCursor(cur)
+
+    def executemany(self, sql, seq):
+        cur = self._raw.cursor()
+        cur.executemany(_translate(sql), list(seq))
+        return _PgCursor(cur)
+
+    def cursor(self):
+        return _PgCursor(self._raw.cursor())
+
+    def commit(self):  self._raw.commit()
+    def rollback(self): self._raw.rollback()
+    def close(self):   self._raw.close()
+
+
+def connect(db_path: str = DB_PATH):
+    """打开(必要时初始化)数据库。设了 DATABASE_URL 走 Postgres,否则 SQLite。"""
+    if IS_POSTGRES:
+        import psycopg2
+        raw = psycopg2.connect(DATABASE_URL, connect_timeout=20)
+        # 建表:AUTOINCREMENT → SERIAL,其余 DDL 两方言通用
+        ddl = _SCHEMA.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+        cur = raw.cursor()
+        cur.execute(ddl)
+        # 轻量迁移:老库补 hearts 列(PG 支持 IF NOT EXISTS,不会污染事务)
+        cur.execute("ALTER TABLE sold_records ADD COLUMN IF NOT EXISTS hearts INTEGER")
+        raw.commit()
+        return _PgConn(raw)
+
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(_SCHEMA)
-    # 轻量迁移:老库的 sold_records 补 hearts 列(新库由 schema 创建)
     try:
         conn.execute("ALTER TABLE sold_records ADD COLUMN hearts INTEGER")
         conn.commit()

@@ -20,11 +20,21 @@
 **文件结构已重组**:旧管道 → `legacy/`(勿 import);agent 即席搜索 → `collectors/grailed_search.py`;
 旧 CSV → `data/legacy_csv/`;演示数据 → `samples/`。清洗规则新增仿款话术过滤(inspired/bootleg/“品牌+style(d)”)。
 
+**Supabase 迁移已完成(2026-06-13)**:
+- `lib/db.py` 加了 Postgres 透明兼容层:检测到 `DATABASE_URL` 即走 Supabase,否则本地 SQLite;
+  调用方代码零改动(`?`→`%s`、`INSERT OR REPLACE`→`ON CONFLICT` 自动翻译)
+- 全部数据已迁入(listings 109,499 / events 110,508 / sold 11,318 等),`scripts/migrate_to_postgres.py` 幂等可重跑
+- 用 **6543 事务池端口**(5432 直连是 IPv6,Actions/部分网络连不上)
+- dashboard `load_scorecard` 改为优先读 PG scorecard 表;Actions 不再 commit CSV(PG 即持久层)
+
 **剩余待办**:
-1. Supabase 云库迁移【需用户先注册 supabase.com 拿连接串】— 解决 Actions runner 无状态问题
-2. AI 分析页端到端实测【需设置 DEEPSEEK_API_KEY】— 代码已审,缺 key 验证
-3. 每周本地跑 `python discovery.py && python scripts/universe.py`(或等 Supabase 后进 Actions);
-   2026-06-26 起试用期满,universe 会对达标品牌打印 watchlist 条目,人工拍板粘贴
+1. 【需用户操作】GitHub 仓库 Settings → Secrets → Actions 添加 `DATABASE_URL`(6543 端口那串);
+   Streamlit Cloud 也加同名 secret —— 两处配好后云端采集+dashboard 才连得上 Supabase
+2. 【需用户操作】Supabase 重置数据库密码(密码曾贴进聊天),改完更新 `.env` + 两处 secret
+3. AI 分析页端到端实测【需 DEEPSEEK_API_KEY】
+4. 2026-06-26 起 universe 试用期满,会对达标品牌打印 watchlist 条目,人工拍板粘贴
+5. ⚡ 性能:`upsert_listings` 逐行 SELECT,在 PG 网络环境下 10 万行偏慢(本地 SQLite 无感)。
+   若周采集太慢 → 用 `execute_values` + `ON CONFLICT` 批量化(预载 existing dict,去掉逐行往返)
 
 ## 0. 项目一句话
 

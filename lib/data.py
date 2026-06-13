@@ -53,7 +53,24 @@ def render_data_age_banner() -> None:
 
 @st.cache_data
 def load_scorecard() -> pd.DataFrame:
-    """加载 scorecard.csv，缺失时回退到 sample_data.csv。"""
+    """优先读数据库 scorecard 表(最新快照);失败/为空回退 CSV。"""
+    # 1. 数据库(Supabase 或本地 SQLite)— 单一事实来源
+    try:
+        from lib import db
+        conn = db.connect()
+        df = pd.read_sql_query(
+            "SELECT * FROM scorecard "
+            "WHERE calc_date = (SELECT MAX(calc_date) FROM scorecard)",
+            conn,
+        )
+        conn.close()
+        if not df.empty:
+            df["calc_date"] = pd.to_datetime(df["calc_date"])
+            return df
+    except Exception:
+        pass
+
+    # 2. CSV 兜底(本地无库 / 演示环境)
     csv_path = os.path.join(BASE_DIR, "scorecard.csv")
     if not os.path.exists(csv_path):
         csv_path = os.path.join(BASE_DIR, "samples", "sample_data.csv")
@@ -61,7 +78,6 @@ def load_scorecard() -> pd.DataFrame:
     df["calc_date"] = pd.to_datetime(df["calc_date"])
     df = df.sort_values("calc_date").groupby("keyword").last().reset_index()
     if "brand" not in df.columns:
-        # 兼容旧版 CSV(无 brand 列):退回"前两词"启发式
         df["brand"] = df["keyword"].apply(
             lambda x: " ".join(x.split()[:2]) if len(x.split()) >= 2 else x
         )
